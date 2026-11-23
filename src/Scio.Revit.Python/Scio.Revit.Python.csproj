@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\RevitCommon.props" />
+  <PropertyGroup>
+    <AssemblyName>Scio.Revit.Python</AssemblyName>
+    <RootNamespace>Scio.Revit.Python</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Scio.Abstractions\Scio.Abstractions.csproj" />
+    <ProjectReference Include="..\Scio.Revit.Sdk\Scio.Revit.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="IronPython" Version="3.4.2" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" Condition="'$(TargetFramework)' == 'net8.0-windows'" />
+  </ItemGroup>
+</Project>

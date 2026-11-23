@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <Version>4.0.0-alpha.1</Version>
+    <Authors>Marco Poma / SCIO DC</Authors>
+    <Company>SCIO DC (Grupo POVA)</Company>
+    <Product>SCIO Revit MCP</Product>
+    <Copyright>Copyright (c) 2026 Marco Poma / SCIO DC</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

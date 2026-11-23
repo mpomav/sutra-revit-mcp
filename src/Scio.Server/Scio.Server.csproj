@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>scio-revit-mcp</AssemblyName>
+    <RootNamespace>Scio.Server</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Scio.Abstractions\Scio.Abstractions.csproj" />
+    <ProjectReference Include="..\Scio.Ipc\Scio.Ipc.csproj" />
+  </ItemGroup>
+</Project>

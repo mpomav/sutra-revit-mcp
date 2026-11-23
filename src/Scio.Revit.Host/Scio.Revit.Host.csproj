@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\RevitCommon.props" />
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>Scio.Revit.Host</AssemblyName>
+    <RootNamespace>Scio.Revit.Host</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Scio.Abstractions\Scio.Abstractions.csproj" />
+    <ProjectReference Include="..\Scio.Ipc\Scio.Ipc.csproj" />
+    <ProjectReference Include="..\Scio.Revit.Sdk\Scio.Revit.Sdk.csproj" />
+  </ItemGroup>
+</Project>

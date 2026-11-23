@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Scio.Abstractions/Scio.Abstractions.csproj" />
+    <Project Path="src/Scio.Ipc/Scio.Ipc.csproj" />
+    <Project Path="src/Scio.Revit.Host/Scio.Revit.Host.csproj" />
+    <Project Path="src/Scio.Revit.Python/Scio.Revit.Python.csproj" />
+    <Project Path="src/Scio.Revit.Sdk/Scio.Revit.Sdk.csproj" />
+    <Project Path="src/Scio.Server/Scio.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Scio.Core.Tests/Scio.Core.Tests.csproj" />
+  </Folder>
+</Solution>
