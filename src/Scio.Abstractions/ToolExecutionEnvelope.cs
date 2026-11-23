@@ -18,7 +18,9 @@ namespace Scio.Abstractions
         ReadOnly,
         DryRunPreview,
         Verified,
+        Partial,
         SelfReportedVerified,
+        Unverified,
         Refused,
         Failed
     }

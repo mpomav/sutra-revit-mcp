@@ -33,6 +33,12 @@ try {
 
         dotnet build src/Scio.Revit.Ui/Scio.Revit.Ui.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
         if ($LASTEXITCODE -ne 0) { throw "Scio.Revit.Ui build failed for Revit $yr." }
+
+        dotnet build src/Modules/Scio.Module.CoreRead/Scio.Module.CoreRead.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
+        if ($LASTEXITCODE -ne 0) { throw "Scio.Module.CoreRead build failed for Revit $yr." }
+
+        dotnet build src/Modules/Scio.Module.ScioNative/Scio.Module.ScioNative.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
+        if ($LASTEXITCODE -ne 0) { throw "Scio.Module.ScioNative build failed for Revit $yr." }
     }
 
     if (-not $SkipTests) {

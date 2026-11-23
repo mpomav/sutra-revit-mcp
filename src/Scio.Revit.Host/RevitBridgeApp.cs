@@ -10,6 +10,7 @@ using Newtonsoft.Json.Linq;
 using Scio.Abstractions;
 using Scio.Ipc;
 using Scio.Revit.Sdk;
+using Scio.Revit.Ui;
 
 namespace Scio.Revit.Host
 {
@@ -40,11 +41,27 @@ namespace Scio.Revit.Host
         private int _queuedCount;
 
         public PermissionProfile PermissionProfile { get; set; } = PermissionProfile.SafeWrite;
+        public bool IsPaused { get; set; }
+        public List<string> LoadedModules { get; } = new List<string>();
+        public List<string> ModuleLoadErrors { get; } = new List<string>();
 
         public RevitCommandDispatcher(int revitYear)
         {
             _revitYear = revitYear;
             Register(new HealthCommand(this));
+        }
+
+        public void LoadModules(string? baseDirectory = null)
+        {
+            var report = RevitModuleLoader.DiscoverAndLoad(baseDirectory);
+            LoadedModules.Clear();
+            LoadedModules.AddRange(report.LoadedModules);
+            ModuleLoadErrors.Clear();
+            ModuleLoadErrors.AddRange(report.Errors);
+            foreach (var cmd in report.Commands)
+            {
+                Register(cmd);
+            }
         }
 
         public void AttachExternalEvent(ExternalEvent externalEvent)
@@ -99,7 +116,23 @@ namespace Scio.Revit.Host
 
                 try
                 {
-                    if (!_commands.TryGetValue(work.Request.Tool, out var command))
+                    if (string.Equals(work.Request.Tool, "_scio_catalog", StringComparison.Ordinal))
+                    {
+                        var catalog = new JObject
+                        {
+                            ["revit_year"] = _revitYear,
+                            ["contract_hash"] = ContractHash,
+                            ["permission_profile"] = PermissionProfile.ToString(),
+                            ["loaded_modules"] = new JArray(LoadedModules),
+                            ["tools"] = JArray.FromObject(ListDescriptors())
+                        };
+                        reply = ToolResponse.Success(work.Request.RequestId, catalog, $"Catalog with {_commands.Count} tools.");
+                    }
+                    else if (IsPaused && !string.Equals(work.Request.Tool, "scio_health", StringComparison.Ordinal))
+                    {
+                        reply = ToolResponse.Refusal(work.Request.RequestId, "bridge_paused", "SCIO Revit MCP bridge is currently paused by the user in Revit.");
+                    }
+                    else if (!_commands.TryGetValue(work.Request.Tool, out var command))
                     {
                         reply = ToolResponse.Refusal(work.Request.RequestId, "unknown_tool", $"Tool '{work.Request.Tool}' is not registered in Revit Host.");
                     }
@@ -145,8 +178,11 @@ namespace Scio.Revit.Host
                     ["version"] = "4.0.0-alpha.1",
                     ["revit_year"] = context.RevitYear,
                     ["permission_profile"] = context.PermissionProfile.ToString(),
+                    ["paused"] = _owner.IsPaused,
                     ["contract_hash"] = _owner.ContractHash,
                     ["registered_tools"] = _owner._commands.Count,
+                    ["loaded_modules"] = new JArray(_owner.LoadedModules),
+                    ["module_load_errors"] = new JArray(_owner.ModuleLoadErrors),
                     ["active_document"] = doc == null ? null : new JObject
                     {
                         ["title"] = doc.Title,
@@ -177,6 +213,7 @@ namespace Scio.Revit.Host
             if (_revitYear == 0) _revitYear = 2026;
 
             _dispatcher = new RevitCommandDispatcher(_revitYear);
+            _dispatcher.LoadModules();
             var externalEvent = ExternalEvent.Create(_dispatcher);
             _dispatcher.AttachExternalEvent(externalEvent);
 
@@ -192,6 +229,31 @@ namespace Scio.Revit.Host
                 Version = "4.0.0-alpha.1",
                 ContractHash = _dispatcher.ContractHash
             });
+
+            ScioBridgeUiHooks.GetStatus = () => new ScioBridgeStatusSnapshot
+            {
+                Version = "4.0.0-alpha.1",
+                RevitYear = _revitYear,
+                PipeName = pipeName,
+                ContractHash = _dispatcher.ContractHash,
+                RegisteredTools = _dispatcher.ListDescriptors().Count,
+                PermissionProfile = _dispatcher.PermissionProfile,
+                IsPaused = _dispatcher.IsPaused,
+                LoadedModules = new List<string>(_dispatcher.LoadedModules)
+            };
+            ScioBridgeUiHooks.TogglePause = () =>
+            {
+                _dispatcher.IsPaused = !_dispatcher.IsPaused;
+                return _dispatcher.IsPaused;
+            };
+            ScioBridgeUiHooks.TogglePythonAccess = () =>
+            {
+                _dispatcher.PermissionProfile = _dispatcher.PermissionProfile == PermissionProfile.UnsafeCode
+                    ? PermissionProfile.SafeWrite
+                    : PermissionProfile.UnsafeCode;
+                return _dispatcher.PermissionProfile;
+            };
+            ScioRibbon.Build(application);
 
             return Result.Succeeded;
         }

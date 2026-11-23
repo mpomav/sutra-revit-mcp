@@ -31,13 +31,25 @@ namespace Scio.Abstractions
     [AttributeUsage(AttributeTargets.Property, AllowMultiple = false)]
     public sealed class ScioParamAttribute : Attribute
     {
+        public string? Name { get; }
         public string Description { get; }
         public bool Required { get; set; }
         public string[]? AllowedValues { get; set; }
+        public string[]? EnumValues
+        {
+            get => AllowedValues;
+            set => AllowedValues = value;
+        }
         public object? DefaultValue { get; set; }
 
         public ScioParamAttribute(string description)
         {
+            Description = description ?? string.Empty;
+        }
+
+        public ScioParamAttribute(string name, string description)
+        {
+            Name = name;
             Description = description ?? string.Empty;
         }
     }

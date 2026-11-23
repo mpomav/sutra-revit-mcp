@@ -27,14 +27,25 @@ namespace Scio.Abstractions
             var attr = handlerType.GetCustomAttribute<ScioToolAttribute>()
                 ?? throw new InvalidOperationException($"Type '{handlerType.FullName}' is missing [ScioTool].");
 
-            var schema = inputDtoType != null
-                ? BuildForType(inputDtoType)
-                : new JObject
+            JObject schema;
+            if (inputDtoType != null)
+            {
+                schema = BuildForType(inputDtoType);
+            }
+            else if (handlerType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Any(p => p.GetCustomAttribute<ScioParamAttribute>() != null))
+            {
+                schema = BuildObjectSchema(handlerType, new HashSet<Type>(), onlyAnnotated: true);
+            }
+            else
+            {
+                schema = new JObject
                 {
                     ["type"] = "object",
                     ["properties"] = new JObject(),
                     ["additionalProperties"] = false
                 };
+            }
 
             return new ToolDescriptor
             {
@@ -74,7 +85,7 @@ namespace Scio.Abstractions
             }
         }
 
-        private static JObject BuildObjectSchema(Type type, HashSet<Type> visited)
+        private static JObject BuildObjectSchema(Type type, HashSet<Type> visited, bool onlyAnnotated = false)
         {
             var properties = new JObject();
             var required = new JArray();
@@ -91,12 +102,16 @@ namespace Scio.Abstractions
                     if (!prop.CanRead || !prop.CanWrite) continue;
                     if (prop.GetCustomAttribute<JsonIgnoreAttribute>() != null) continue;
 
-                    var jsonProp = prop.GetCustomAttribute<JsonPropertyAttribute>();
-                    string propName = !string.IsNullOrWhiteSpace(jsonProp?.PropertyName)
-                        ? jsonProp!.PropertyName!
-                        : ToSnakeCase(prop.Name);
-
                     var paramAttr = prop.GetCustomAttribute<ScioParamAttribute>();
+                    if (onlyAnnotated && paramAttr == null) continue;
+
+                    var jsonProp = prop.GetCustomAttribute<JsonPropertyAttribute>();
+                    string propName = !string.IsNullOrWhiteSpace(paramAttr?.Name)
+                        ? paramAttr!.Name!
+                        : (!string.IsNullOrWhiteSpace(jsonProp?.PropertyName)
+                            ? jsonProp!.PropertyName!
+                            : ToSnakeCase(prop.Name));
+
                     var propSchema = BuildPropertySchema(prop.PropertyType, paramAttr, visited);
 
                     properties[propName] = propSchema;

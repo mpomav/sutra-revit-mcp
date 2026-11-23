@@ -10,5 +10,6 @@
     <ProjectReference Include="..\Scio.Abstractions\Scio.Abstractions.csproj" />
     <ProjectReference Include="..\Scio.Ipc\Scio.Ipc.csproj" />
     <ProjectReference Include="..\Scio.Revit.Sdk\Scio.Revit.Sdk.csproj" />
+    <ProjectReference Include="..\Scio.Revit.Ui\Scio.Revit.Ui.csproj" />
   </ItemGroup>
 </Project>

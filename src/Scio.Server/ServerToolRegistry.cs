@@ -15,11 +15,51 @@ namespace Scio.Server
     {
         private readonly Dictionary<string, ToolDescriptor> _descriptors = new Dictionary<string, ToolDescriptor>(StringComparer.Ordinal);
         private readonly Dictionary<string, ServerToolDelegate> _serverHandlers = new Dictionary<string, ServerToolDelegate>(StringComparer.Ordinal);
+        private string? _lastHydratedPipe;
+        private string? _lastHydratedHash;
 
         public string? PinnedPipeName { get; set; }
         public int? PreferredRevitYear { get; set; }
         public PermissionProfile PermissionProfile { get; set; } = PermissionProfile.SafeWrite;
         public HashSet<string> ActivePacks { get; set; } = ToolPackResolver.ResolveActivePacks(null);
+
+        public async Task<int> HydrateRemoteCatalogAsync(CancellationToken ct, bool force = false)
+        {
+            string? pipeName = ResolveTargetPipe();
+            if (string.IsNullOrWhiteSpace(pipeName)) return 0;
+
+            if (!force && string.Equals(pipeName, _lastHydratedPipe, StringComparison.Ordinal) && !string.IsNullOrEmpty(_lastHydratedHash))
+                return 0;
+
+            try
+            {
+                var client = new ScioPipeClient(pipeName!);
+                var reply = await client.SendAsync(new ToolRequest { Tool = "_scio_catalog" }, connectTimeoutMs: 1500, ct: ct).ConfigureAwait(false);
+                if (!reply.Ok || reply.Data is not JObject data) return 0;
+
+                string? hash = data.Value<string>("contract_hash");
+                if (data["tools"] is not JArray arr) return 0;
+
+                int registered = 0;
+                foreach (var item in arr)
+                {
+                    var desc = item.ToObject<ToolDescriptor>();
+                    if (desc != null && !string.IsNullOrWhiteSpace(desc.Name) && !_serverHandlers.ContainsKey(desc.Name))
+                    {
+                        RegisterRemoteTool(desc);
+                        registered++;
+                    }
+                }
+
+                _lastHydratedPipe = pipeName;
+                _lastHydratedHash = hash;
+                return registered;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
 
         public void RegisterServerTool(ToolDescriptor descriptor, ServerToolDelegate handler)
         {

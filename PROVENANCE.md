@@ -19,12 +19,13 @@ No third-party MCP bridge source code is copied, renamed, or derived in this rep
 | --- | --- | --- | --- |
 | `Scio.Abstractions` | Clean-room original (SCIO DC) + SCIO Core engines (`ScioHtmlTheme`, `RunRefResolver`, `LocalPlanStore`, `ProjectClassificationLookup`, `RuleMatchEngine`) | Wave 1 | Done |
 | `Scio.Ipc` | Clean-room original (SCIO DC) | Wave 1 | Done |
-| `Scio.Server` | Clean-room original (SCIO DC) + SCIO local tools (`CodeMode`, `SqliteIngestor`, `BimSearchIndex`, `QueryLocal`, `Report`, `BatchAudit`, `ProgressTakeoff`) | Wave 1 | Done |
-| `Scio.Revit.Sdk` | Clean-room original (SCIO DC) | Wave 1 | Done |
-| `Scio.Revit.Host` | Clean-room original (SCIO DC) | Wave 1 | Done |
-| `Scio.Revit.Python` | Clean-room original (SCIO DC) + 9 SCIO Python recipes | Wave 1 | Done |
-| `Scio.Revit.Ui` | Original SCIO DC UI (`ScioTheme`, `ScioDialog`, `SchemaForm`, `ClaudeHandoff`, DM Sans fonts, SCIO icons) | Wave 1 | In progress (core migrated) |
-| `Scio.Module.CoreRead` | Clean-room original (SCIO DC) | Wave 2 | Planned |
+| `Scio.Server` | Clean-room original (SCIO DC) + SCIO local tools (`CodeMode`, `SqliteIngestor`, `BimSearchIndex`, `QueryLocal`, `Report`, `BatchAudit`, `ProgressTakeoff`, `SuggestWorkflow`) + dynamic IPC catalog hydration | Wave 1–2 | Done |
+| `Scio.Revit.Sdk` | Clean-room original (SCIO DC): `RevitContext`, `TransactionPipeline`, `RevitModuleLoader`, `RevitElementKit` | Wave 1–2 | Done |
+| `Scio.Revit.Host` | Clean-room original (SCIO DC): FIFO dispatcher, `_scio_catalog`, module auto-loader, Ribbon hooks | Wave 1–2 | Done |
+| `Scio.Revit.Python` | Clean-room original (SCIO DC) + 9 SCIO Python recipes + `IRevitModule` | Wave 1–2 | Done |
+| `Scio.Revit.Ui` | Original SCIO DC UI (`ScioTheme`, `ScioDialog`, `SchemaForm`, `ClaudeHandoff`, DM Sans fonts, SCIO icons) + clean-room `ScioRibbon` | Wave 1–2 | Done |
+| `Scio.Module.CoreRead` | Clean-room original (SCIO DC) — 22 core session, read, navigation, diff, parameter, delete, plan & copy tools | Wave 2 | Done |
+| `Scio.Module.ScioNative` | 11 verified 100% SCIO-authored Revit commands (`Context`, `ExplainFinding`, `ModelCleanup`, `NamingCheck`, `PresyncCheck`, `RecipeDispatcher`, `RfiGenerator`, `RuleApply`, `ScioOutput`, `SelectionResolver`, `VisualQa`) + clean-room `NativeShims` | Wave 2 | Done |
 | `Scio.Module.Modeling` | Clean-room original (SCIO DC) | Wave 3 | Planned |
 | `Scio.Module.Documentation` | Clean-room original (SCIO DC) | Wave 4 | Planned |
 | `Scio.Module.AuditQa` | Clean-room original (SCIO DC) | Wave 5 | Planned |

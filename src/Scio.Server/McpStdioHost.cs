@@ -92,6 +92,15 @@ namespace Scio.Server
 
             LocalToolsRegistrar.RegisterAll(_registry);
 
+            _registry.RegisterRemoteTool(new ToolDescriptor
+            {
+                Name = "scio_health",
+                Pack = "core",
+                Description = "Check SCIO Revit MCP v4 bridge health, active document, loaded modules, and contract hash.",
+                ReadOnly = true,
+                InputSchema = new JObject { ["type"] = "object", ["properties"] = new JObject(), ["additionalProperties"] = false }
+            });
+
             if (_schemaMode == "facade" || _schemaMode == "codemode")
             {
                 RegisterFacadeTools();
@@ -255,12 +264,14 @@ namespace Scio.Server
                     return MakeJsonRpcResult(id, new JObject());
 
                 case "tools/list":
+                    await _registry.HydrateRemoteCatalogAsync(ct).ConfigureAwait(false);
                     return MakeJsonRpcResult(id, BuildToolsList());
 
                 case "tools/call":
                     return await HandleToolCallAsync(id, @params, ct).ConfigureAwait(false);
 
                 case "resources/list":
+                    await _registry.HydrateRemoteCatalogAsync(ct).ConfigureAwait(false);
                     return MakeJsonRpcResult(id, BuildResourcesList());
 
                 case "resources/read":

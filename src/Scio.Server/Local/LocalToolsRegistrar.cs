@@ -48,6 +48,15 @@ namespace Scio.Server
                 readOnly: false,
                 openWorld: true,
                 executor: (args, ct) => ProgressTakeoffTool.Handle(args, ct));
+
+            Register(
+                registry,
+                name: "scio_suggest_workflow",
+                pack: "core",
+                description: "Recommend SCIO Revit MCP v4 tools and workflow steps for a natural-language BIM goal (ES/EN).",
+                readOnly: true,
+                openWorld: false,
+                executor: (args, ct) => SuggestWorkflowTool.Handle(registry, args));
         }
 
         private static void Register(

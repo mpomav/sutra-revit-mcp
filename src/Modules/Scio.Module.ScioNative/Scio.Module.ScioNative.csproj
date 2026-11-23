@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\RevitCommon.props" />
+  <PropertyGroup>
+    <AssemblyName>Scio.Module.ScioNative</AssemblyName>
+    <RootNamespace>Scio.Module.ScioNative</RootNamespace>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Scio.Abstractions\Scio.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Scio.Revit.Sdk\Scio.Revit.Sdk.csproj" />
+    <ProjectReference Include="..\..\Scio.Revit.Python\Scio.Revit.Python.csproj" />
+  </ItemGroup>
+</Project>

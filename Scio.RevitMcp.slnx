@@ -8,6 +8,10 @@
     <Project Path="src/Scio.Revit.Ui/Scio.Revit.Ui.csproj" />
     <Project Path="src/Scio.Server/Scio.Server.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/">
+    <Project Path="src/Modules/Scio.Module.CoreRead/Scio.Module.CoreRead.csproj" />
+    <Project Path="src/Modules/Scio.Module.ScioNative/Scio.Module.ScioNative.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Scio.Core.Tests/Scio.Core.Tests.csproj" />
   </Folder>

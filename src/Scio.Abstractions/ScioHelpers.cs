@@ -14,6 +14,7 @@ namespace Scio.Abstractions
         public static string ReportsDir() => ScioRuntimePaths.ReportsDirectory;
         public static string RunsDir() => Path.Combine(DataRoot(), "runs");
         public static string PlansDir() => Path.Combine(DataRoot(), "plans");
+        public static string SalidasDir() => EnsureDir(Path.Combine(DataRoot(), "salidas"));
 
         public static string EnsureDir(string path)
         {
