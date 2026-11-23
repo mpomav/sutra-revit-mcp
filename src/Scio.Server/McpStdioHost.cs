@@ -319,6 +319,21 @@ namespace Scio.Server
             string toolName = @params.Value<string>("name") ?? string.Empty;
             var args = @params["arguments"] as JObject ?? new JObject();
 
+            if (_schemaMode == "facade" && string.Equals(toolName, CodeModeTool.ToolName, StringComparison.Ordinal))
+            {
+                var refused = ToolResponse.Refusal(
+                    Guid.NewGuid().ToString("N"),
+                    "mode_restricted",
+                    "scio_code_mode is disabled when SCIO_SCHEMA_MODE=facade. Use full or codemode.");
+                var refPayload = JObject.FromObject(refused);
+                return MakeJsonRpcResult(id, new JObject
+                {
+                    ["content"] = new JArray(new JObject { ["type"] = "text", ["text"] = refPayload.ToString(Formatting.Indented) }),
+                    ["structuredContent"] = refPayload,
+                    ["isError"] = true
+                });
+            }
+
             var req = new ToolRequest
             {
                 Tool = toolName,

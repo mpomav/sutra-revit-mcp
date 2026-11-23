@@ -41,6 +41,8 @@ namespace Scio.Server
         public int TimeoutMs { get; set; } = 30_000;
         public int MaxCallDepth { get; set; } = 32;
         public int MaxLogs { get; set; } = 50;
+        public int MaxStringLength { get; set; } = 256 * 1024;
+        public int MaxArrayLength { get; set; } = 10_000;
     }
 
     internal sealed class CodeModeRunOutput
@@ -1383,7 +1385,14 @@ namespace Scio.Server
                 switch (be.Op)
                 {
                     case "+":
-                        if (a is string || b is string) return FormatValue(a) + FormatValue(b);
+                        if (a is string || b is string)
+                        {
+                            string sa = FormatValue(a);
+                            string sb = FormatValue(b);
+                            if (sa.Length + sb.Length > _limits.MaxStringLength)
+                                throw new CodeModeException("memory_limit", $"String length exceeded max ({_limits.MaxStringLength} chars).");
+                            return sa + sb;
+                        }
                         return ToNumber(a) + ToNumber(b);
                     case "-": return ToNumber(a) - ToNumber(b);
                     case "*": return ToNumber(a) * ToNumber(b);
@@ -1525,9 +1534,23 @@ namespace Scio.Server
                 switch (prop)
                 {
                     case "length": return (double)list.Count;
-                    case "push": return (HostCallable)(args => { foreach (var a in args) list.Add(a); return (double)list.Count; });
+                    case "push":
+                        return (HostCallable)(args =>
+                        {
+                            if (list.Count + args.Count > _limits.MaxArrayLength)
+                                throw new CodeModeException("memory_limit", $"Array length exceeded max ({_limits.MaxArrayLength} items).");
+                            foreach (var a in args) list.Add(a);
+                            return (double)list.Count;
+                        });
                     case "pop": return (HostCallable)(_ => { if (list.Count == 0) return UndefinedValue.Instance; var v = list[list.Count - 1]; list.RemoveAt(list.Count - 1); return v; });
-                    case "join": return (HostCallable)(args => string.Join(args.Count > 0 ? FormatValue(args[0]) : ",", list.Select(x => x == null || x is UndefinedValue ? "" : FormatValue(x))));
+                    case "join":
+                        return (HostCallable)(args =>
+                        {
+                            string joined = string.Join(args.Count > 0 ? FormatValue(args[0]) : ",", list.Select(x => x == null || x is UndefinedValue ? "" : FormatValue(x)));
+                            if (joined.Length > _limits.MaxStringLength)
+                                throw new CodeModeException("memory_limit", $"Joined string exceeded max ({_limits.MaxStringLength} chars).");
+                            return joined;
+                        });
                     case "includes": return (HostCallable)(args => args.Count > 0 && list.Any(x => LooseEquals(x, args[0])));
                     case "indexOf": return (HostCallable)(args => args.Count == 0 ? -1.0 : (double)list.FindIndex(x => StrictEquals(x, args[0])));
                     case "slice":
@@ -1545,14 +1568,24 @@ namespace Scio.Server
                         return (HostCallable)(args =>
                         {
                             var res = new List<object>(list);
-                            foreach (var a in args) { if (a is List<object> al) res.AddRange(al); else res.Add(a); }
+                            foreach (var a in args)
+                            {
+                                if (a is List<object> al) res.AddRange(al); else res.Add(a);
+                                if (res.Count > _limits.MaxArrayLength)
+                                    throw new CodeModeException("memory_limit", $"Array length exceeded max ({_limits.MaxArrayLength} items).");
+                            }
                             return res;
                         });
                     case "flat":
                         return (HostCallable)(_ =>
                         {
                             var res = new List<object>();
-                            foreach (var item in list) { if (item is List<object> al) res.AddRange(al); else res.Add(item); }
+                            foreach (var item in list)
+                            {
+                                if (item is List<object> al) res.AddRange(al); else res.Add(item);
+                                if (res.Count > _limits.MaxArrayLength)
+                                    throw new CodeModeException("memory_limit", $"Array length exceeded max ({_limits.MaxArrayLength} items).");
+                            }
                             return res;
                         });
                     case "reverse": return (HostCallable)(_ => { list.Reverse(); return list; });

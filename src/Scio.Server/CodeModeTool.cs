@@ -57,7 +57,7 @@ namespace Scio.Server
             InputSchema = JObject.Parse(@"{""type"":""object"",""properties"":{
 ""code"":{""type"":""string"",""description"":""JS-subset script to run. Use `return ...;` for the final payload.""},
 ""inputs"":{""type"":""object"",""description"":""Optional JSON object exposed inside the script as `inputs`.""},
-""read_only"":{""type"":""boolean"",""default"":false,""description"":""When true, refuses any call to a mutating/destructive tool.""},
+""read_only"":{""type"":""boolean"",""default"":true,""description"":""When true (default), refuses any mutating, destructive, or uncontracted tool call (fail-closed). Set false explicitly to permit writes.""},
 ""max_tool_calls"":{""type"":""integer"",""minimum"":1,""maximum"":100,""default"":25,""description"":""Maximum SCIO tool calls allowed in this script run.""},
 ""max_steps"":{""type"":""integer"",""minimum"":100,""maximum"":200000,""default"":50000,""description"":""Maximum AST evaluation steps.""},
 ""timeout_ms"":{""type"":""integer"",""minimum"":100,""maximum"":120000,""default"":30000,""description"":""Wall-clock timeout in milliseconds.""},
@@ -97,7 +97,7 @@ namespace Scio.Server
                 throw new ToolRefusalException("'code' must be a non-empty string.");
 
             JObject inputs = args["inputs"] as JObject;
-            bool readOnly = args.Value<bool?>("read_only") ?? false;
+            bool readOnly = args.Value<bool?>("read_only") ?? true;
             int maxToolCalls = Clamp(args.Value<int?>("max_tool_calls") ?? DefaultMaxToolCalls, 1, HardMaxToolCalls);
             int maxSteps = Clamp(args.Value<int?>("max_steps") ?? DefaultMaxSteps, 100, HardMaxSteps);
             int timeoutMs = Clamp(args.Value<int?>("timeout_ms") ?? DefaultTimeoutMs, 100, HardTimeoutMs);
@@ -117,6 +117,8 @@ namespace Scio.Server
                     throw new CodeModeException("tool_error", "Recursive call to '" + ToolName + "' is not allowed.");
                 if (toolName == "scio_execute_python")
                     throw new CodeModeException("tool_error", "'scio_execute_python' is blocked inside " + ToolName + ".");
+                if (toolName == "scio_call_tool")
+                    throw new CodeModeException("tool_error", "'scio_call_tool' is blocked inside " + ToolName + "; call the target tool directly.");
 
                 if (callCount >= maxToolCalls)
                     throw new CodeModeException("tool_call_limit", $"Exceeded max_tool_calls ({maxToolCalls}).");
@@ -149,11 +151,19 @@ namespace Scio.Server
                 }
 
                 var descriptor = registry.FindDescriptor(toolName);
-                if (readOnly && descriptor != null && !descriptor.ReadOnly)
+                if (readOnly && (descriptor == null || !descriptor.ReadOnly))
                 {
-                    trace.Add(new JObject { ["step"] = callCount + 1, ["tool"] = toolName, ["ok"] = false, ["blocked"] = "read_only" });
-                    throw new CodeModeException("tool_error", $"Tool '{toolName}' is blocked because read_only=true.");
+                    string reason = descriptor == null ? "missing_contract" : "read_only";
+                    trace.Add(new JObject { ["step"] = callCount + 1, ["tool"] = toolName, ["ok"] = false, ["blocked"] = reason });
+                    throw new CodeModeException("tool_error",
+                        descriptor == null
+                            ? $"Tool '{toolName}' has no registered contract descriptor and is blocked when read_only=true."
+                            : $"Tool '{toolName}' is blocked because read_only=true.");
                 }
+
+                int remainingMs = timeoutMs - (int)sw.ElapsedMilliseconds;
+                if (remainingMs <= 0)
+                    throw new CodeModeException("timeout", $"Code Mode exceeded timeout_ms ({timeoutMs} ms).");
 
                 callCount++;
                 var callSw = Stopwatch.StartNew();
@@ -163,7 +173,12 @@ namespace Scio.Server
                     Arguments = callArgs ?? new JObject()
                 };
 
-                ToolResponse reply = registry.DispatchAsync(innerReq, ct).GetAwaiter().GetResult();
+                ToolResponse reply;
+                using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                {
+                    linkedCts.CancelAfter(remainingMs);
+                    reply = registry.DispatchAsync(innerReq, linkedCts.Token).GetAwaiter().GetResult();
+                }
                 callSw.Stop();
 
                 trace.Add(new JObject
@@ -171,7 +186,9 @@ namespace Scio.Server
                     ["step"] = callCount,
                     ["tool"] = toolName,
                     ["ms"] = callSw.ElapsedMilliseconds,
-                    ["ok"] = reply.Ok
+                    ["ok"] = reply.Ok,
+                    ["verification"] = reply.Verification.ToString(),
+                    ["host_verified"] = reply.HostVerified
                 });
 
                 if (!reply.Ok)
