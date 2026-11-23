@@ -9,9 +9,15 @@
     <Project Path="src/Scio.Server/Scio.Server.csproj" />
   </Folder>
   <Folder Name="/src/Modules/">
+    <Project Path="src/Modules/Scio.Module.AuditQa/Scio.Module.AuditQa.csproj" />
+    <Project Path="src/Modules/Scio.Module.CadIfc/Scio.Module.CadIfc.csproj" />
     <Project Path="src/Modules/Scio.Module.CoreRead/Scio.Module.CoreRead.csproj" />
+    <Project Path="src/Modules/Scio.Module.Documentation/Scio.Module.Documentation.csproj" />
+    <Project Path="src/Modules/Scio.Module.IsoInterop/Scio.Module.IsoInterop.csproj" />
+    <Project Path="src/Modules/Scio.Module.Mep/Scio.Module.Mep.csproj" />
     <Project Path="src/Modules/Scio.Module.Modeling/Scio.Module.Modeling.csproj" />
     <Project Path="src/Modules/Scio.Module.ScioNative/Scio.Module.ScioNative.csproj" />
+    <Project Path="src/Modules/Scio.Module.Structure/Scio.Module.Structure.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Scio.Core.Tests/Scio.Core.Tests.csproj" />

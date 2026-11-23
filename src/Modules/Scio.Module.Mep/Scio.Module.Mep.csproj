@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\RevitCommon.props" />
+  <PropertyGroup>
+    <AssemblyName>Scio.Module.Mep</AssemblyName>
+    <RootNamespace>Scio.Module.Mep</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Scio.Abstractions\Scio.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Scio.Revit.Sdk\Scio.Revit.Sdk.csproj" />
+  </ItemGroup>
+</Project>

@@ -12,6 +12,21 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
+$RevitProjects = @(
+    "src/Scio.Revit.Host/Scio.Revit.Host.csproj",
+    "src/Scio.Revit.Python/Scio.Revit.Python.csproj",
+    "src/Scio.Revit.Ui/Scio.Revit.Ui.csproj",
+    "src/Modules/Scio.Module.CoreRead/Scio.Module.CoreRead.csproj",
+    "src/Modules/Scio.Module.ScioNative/Scio.Module.ScioNative.csproj",
+    "src/Modules/Scio.Module.Modeling/Scio.Module.Modeling.csproj",
+    "src/Modules/Scio.Module.Documentation/Scio.Module.Documentation.csproj",
+    "src/Modules/Scio.Module.AuditQa/Scio.Module.AuditQa.csproj",
+    "src/Modules/Scio.Module.Mep/Scio.Module.Mep.csproj",
+    "src/Modules/Scio.Module.Structure/Scio.Module.Structure.csproj",
+    "src/Modules/Scio.Module.CadIfc/Scio.Module.CadIfc.csproj",
+    "src/Modules/Scio.Module.IsoInterop/Scio.Module.IsoInterop.csproj"
+)
+
 Push-Location $RepoRoot
 try {
     Write-Host "=== Building Scio.Server ($Configuration) ===" -ForegroundColor Cyan
@@ -24,24 +39,12 @@ try {
             Write-Host "Skipping Revit $yr (not installed)." -ForegroundColor Yellow
             continue
         }
-        Write-Host "=== Building Revit $yr payload ($Configuration) ===" -ForegroundColor Cyan
-        dotnet build src/Scio.Revit.Host/Scio.Revit.Host.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
-        if ($LASTEXITCODE -ne 0) { throw "Scio.Revit.Host build failed for Revit $yr." }
-
-        dotnet build src/Scio.Revit.Python/Scio.Revit.Python.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
-        if ($LASTEXITCODE -ne 0) { throw "Scio.Revit.Python build failed for Revit $yr." }
-
-        dotnet build src/Scio.Revit.Ui/Scio.Revit.Ui.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
-        if ($LASTEXITCODE -ne 0) { throw "Scio.Revit.Ui build failed for Revit $yr." }
-
-        dotnet build src/Modules/Scio.Module.CoreRead/Scio.Module.CoreRead.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
-        if ($LASTEXITCODE -ne 0) { throw "Scio.Module.CoreRead build failed for Revit $yr." }
-
-        dotnet build src/Modules/Scio.Module.ScioNative/Scio.Module.ScioNative.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
-        if ($LASTEXITCODE -ne 0) { throw "Scio.Module.ScioNative build failed for Revit $yr." }
-
-        dotnet build src/Modules/Scio.Module.Modeling/Scio.Module.Modeling.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
-        if ($LASTEXITCODE -ne 0) { throw "Scio.Module.Modeling build failed for Revit $yr." }
+        Write-Host "=== Building Revit $yr payload ($Configuration, $($RevitProjects.Count) projects) ===" -ForegroundColor Cyan
+        foreach ($proj in $RevitProjects) {
+            dotnet build $proj -p:RevitYear=$yr -c $Configuration --nologo -v quiet
+            if ($LASTEXITCODE -ne 0) { throw "$proj build failed for Revit $yr." }
+        }
+        Write-Host "  Revit $yr OK ($($RevitProjects.Count)/$($RevitProjects.Count) projects)." -ForegroundColor Green
     }
 
     if (-not $SkipTests) {
@@ -50,7 +53,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Tests failed." }
     }
 
-    Write-Host "SCIO Revit MCP v4 build succeeded." -ForegroundColor Green
+    Write-Host "SCIO Revit MCP v4 build succeeded across all targets." -ForegroundColor Green
 }
 finally {
     Pop-Location

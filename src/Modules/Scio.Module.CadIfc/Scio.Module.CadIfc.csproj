@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\RevitCommon.props" />
+  <PropertyGroup>
+    <AssemblyName>Scio.Module.CadIfc</AssemblyName>
+    <RootNamespace>Scio.Module.CadIfc</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Scio.Abstractions\Scio.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Scio.Revit.Sdk\Scio.Revit.Sdk.csproj" />
+  </ItemGroup>
+</Project>
