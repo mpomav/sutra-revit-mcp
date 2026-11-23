@@ -9,6 +9,7 @@ The packages below are consumed via NuGet and governed by their own licenses:
 | Newtonsoft.Json | 13.0.3 | MIT | JSON serialization for MCP and IPC envelopes |
 | IronPython | 3.4.2 | Apache-2.0 | Isolated Python escape hatch inside Revit |
 | System.Text.Encoding.CodePages | 8.0.0 | MIT | Codepage 1252 support for IronPython on .NET 8 targets |
+| DM Sans Fonts | Google Fonts | SIL Open Font License 1.1 | UI typography bundled in `Scio.Revit.Ui` (`Resources/Fonts/OFL.txt`) |
 
 ## Referenced at build time only (never redistributed)
 

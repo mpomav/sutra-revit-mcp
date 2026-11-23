@@ -30,6 +30,9 @@ try {
 
         dotnet build src/Scio.Revit.Python/Scio.Revit.Python.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
         if ($LASTEXITCODE -ne 0) { throw "Scio.Revit.Python build failed for Revit $yr." }
+
+        dotnet build src/Scio.Revit.Ui/Scio.Revit.Ui.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
+        if ($LASTEXITCODE -ne 0) { throw "Scio.Revit.Ui build failed for Revit $yr." }
     }
 
     if (-not $SkipTests) {

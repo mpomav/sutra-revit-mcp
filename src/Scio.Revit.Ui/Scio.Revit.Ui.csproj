@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\RevitCommon.props" />
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>Scio.Revit.Ui</AssemblyName>
+    <RootNamespace>Scio.Revit.Ui</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Scio.Abstractions\Scio.Abstractions.csproj" />
+    <ProjectReference Include="..\Scio.Revit.Sdk\Scio.Revit.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\Fonts\*.ttf" />
+    <Resource Include="Resources\*.png" />
+  </ItemGroup>
+</Project>

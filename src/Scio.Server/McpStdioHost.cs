@@ -86,7 +86,13 @@ namespace Scio.Server
                     return Task.FromResult(ToolResponse.Success(req.RequestId, data, $"Found {sessions.Count} live Revit v4 session(s)."));
                 });
 
-            if (_schemaMode == "facade")
+            _registry.RegisterServerTool(
+                CodeModeTool.CreateDescriptor(),
+                (req, ct) => CodeModeTool.ExecuteAsync(_registry, req, ct));
+
+            LocalToolsRegistrar.RegisterAll(_registry);
+
+            if (_schemaMode == "facade" || _schemaMode == "codemode")
             {
                 RegisterFacadeTools();
             }
@@ -272,6 +278,12 @@ namespace Scio.Server
             {
                 visible = visible
                     .Where(t => t.Name == "scio_list_tools" || t.Name == "scio_describe_tool" || t.Name == "scio_call_tool" || t.Name == "scio_target")
+                    .ToList();
+            }
+            else if (_schemaMode == "codemode")
+            {
+                visible = visible
+                    .Where(t => t.Name == CodeModeTool.ToolName || t.Name == "scio_list_tools" || t.Name == "scio_describe_tool" || t.Name == "scio_target")
                     .ToList();
             }
 

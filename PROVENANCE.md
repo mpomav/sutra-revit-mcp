@@ -17,13 +17,13 @@ No third-party MCP bridge source code is copied, renamed, or derived in this rep
 
 | Module / Assembly | Origin | Wave | Status |
 | --- | --- | --- | --- |
-| `Scio.Abstractions` | Clean-room original (SCIO DC) | Wave 1 | In progress |
-| `Scio.Ipc` | Clean-room original (SCIO DC) | Wave 1 | In progress |
-| `Scio.Server` | Clean-room original (SCIO DC) + SCIO local tools | Wave 1 | In progress |
-| `Scio.Revit.Sdk` | Clean-room original (SCIO DC) | Wave 1 | In progress |
-| `Scio.Revit.Host` | Clean-room original (SCIO DC) | Wave 1 | In progress |
-| `Scio.Revit.Python` | Clean-room original (SCIO DC) + SCIO recipes | Wave 1 | In progress |
-| `Scio.Revit.Ui` | Original SCIO DC UI (migrated & audited) | Wave 1 | Planned |
+| `Scio.Abstractions` | Clean-room original (SCIO DC) + SCIO Core engines (`ScioHtmlTheme`, `RunRefResolver`, `LocalPlanStore`, `ProjectClassificationLookup`, `RuleMatchEngine`) | Wave 1 | Done |
+| `Scio.Ipc` | Clean-room original (SCIO DC) | Wave 1 | Done |
+| `Scio.Server` | Clean-room original (SCIO DC) + SCIO local tools (`CodeMode`, `SqliteIngestor`, `BimSearchIndex`, `QueryLocal`, `Report`, `BatchAudit`, `ProgressTakeoff`) | Wave 1 | Done |
+| `Scio.Revit.Sdk` | Clean-room original (SCIO DC) | Wave 1 | Done |
+| `Scio.Revit.Host` | Clean-room original (SCIO DC) | Wave 1 | Done |
+| `Scio.Revit.Python` | Clean-room original (SCIO DC) + 9 SCIO Python recipes | Wave 1 | Done |
+| `Scio.Revit.Ui` | Original SCIO DC UI (`ScioTheme`, `ScioDialog`, `SchemaForm`, `ClaudeHandoff`, DM Sans fonts, SCIO icons) | Wave 1 | In progress (core migrated) |
 | `Scio.Module.CoreRead` | Clean-room original (SCIO DC) | Wave 2 | Planned |
 | `Scio.Module.Modeling` | Clean-room original (SCIO DC) | Wave 3 | Planned |
 | `Scio.Module.Documentation` | Clean-room original (SCIO DC) | Wave 4 | Planned |
