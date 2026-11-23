@@ -7,6 +7,8 @@
     <PlatformTarget>x64</PlatformTarget>
     <DefineConstants>$(DefineConstants);REVIT$(RevitYear)</DefineConstants>
     <DefineConstants Condition="'$(RevitYear)' != '2023'">$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitYear)' != '2023' and '$(RevitYear)' != '2024'">$(DefineConstants);REVIT2025_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitYear)' != '2023' and '$(RevitYear)' != '2024' and '$(RevitYear)' != '2025'">$(DefineConstants);REVIT2026_OR_GREATER</DefineConstants>
     <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitYear)</RevitInstallDir>
   </PropertyGroup>
 

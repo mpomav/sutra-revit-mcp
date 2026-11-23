@@ -10,6 +10,7 @@
   </Folder>
   <Folder Name="/src/Modules/">
     <Project Path="src/Modules/Scio.Module.CoreRead/Scio.Module.CoreRead.csproj" />
+    <Project Path="src/Modules/Scio.Module.Modeling/Scio.Module.Modeling.csproj" />
     <Project Path="src/Modules/Scio.Module.ScioNative/Scio.Module.ScioNative.csproj" />
   </Folder>
   <Folder Name="/tests/">

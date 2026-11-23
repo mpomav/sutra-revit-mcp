@@ -39,6 +39,9 @@ try {
 
         dotnet build src/Modules/Scio.Module.ScioNative/Scio.Module.ScioNative.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
         if ($LASTEXITCODE -ne 0) { throw "Scio.Module.ScioNative build failed for Revit $yr." }
+
+        dotnet build src/Modules/Scio.Module.Modeling/Scio.Module.Modeling.csproj -p:RevitYear=$yr -c $Configuration --nologo -v minimal
+        if ($LASTEXITCODE -ne 0) { throw "Scio.Module.Modeling build failed for Revit $yr." }
     }
 
     if (-not $SkipTests) {
