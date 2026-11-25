@@ -2,7 +2,7 @@
 
 ## v1.0.0 (2026-11-24)
 
-First public **Clean-Room** release of **Sutra — Revit MCP** (`mpomav/sutra-revit-mcp`), supporting **Autodesk Revit 2023–2027** across **9 modular domains** and **124 verified tools**.
+First public **Clean-Room** release of **Sutra — Revit MCP** (`mpomav/sutra-revit-mcp`), supporting **Autodesk Revit 2023–2027** across **9 modular domains** and **130 verified tools**.
 
 ### Highlights
 

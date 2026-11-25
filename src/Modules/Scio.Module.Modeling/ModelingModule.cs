@@ -17,6 +17,9 @@ namespace Scio.Module.Modeling
             yield return new FramingCommand();
             yield return new CreateRailingCommand();
             yield return new ManageAssembliesPartsCommand();
+            yield return new JoinGeometryCommand();
+            yield return new SplitByLevelCommand();
+            yield return new WallFinishCommand();
 
             // Families & Catalog (4)
             yield return new CreateFamilyCommand();

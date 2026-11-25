@@ -36,6 +36,10 @@ namespace Scio.Module.CoreRead
             yield return new DeleteVerifiedCommand();
             yield return new ExecutePlanCommand();
             yield return new CopyBetweenDocumentsCommand();
+
+            // Template Kit & Precision Geometry (2)
+            yield return new TemplateKitCommand();
+            yield return new MeasureGeometryCommand();
         }
     }
 }

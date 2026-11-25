@@ -1,6 +1,6 @@
 # Guía de modos de contexto / AI Context & Token Modes — Sutra v1.0.0
 
-El contrato completo de **Sutra v1.0.0** (arquitectura Clean-Room modular) reúne **124 herramientas tipadas** (115 en 9 módulos de Revit + 9 locales en el servidor). En un servidor MCP convencional, anunciar todo el catálogo al abrir el chat **satura la ventana de contexto inicial** y provoca **degradación de selección de herramientas** (*tool selection degradation*): al pasar de 30–50 esquemas, los LLMs confunden argumentos entre herramientas parecidas. Además, aunque el *prompt caching* reduce el costo económico en turnos posteriores, **no libera ventana de contexto** ni evita los límites estrictos de planes gratuitos.
+El contrato completo de **Sutra v1.0.0** (arquitectura Clean-Room modular) reúne **130 herramientas tipadas** (118 en 9 módulos de Revit + 9 locales en el servidor). En un servidor MCP convencional, anunciar todo el catálogo al abrir el chat **satura la ventana de contexto inicial** y provoca **degradación de selección de herramientas** (*tool selection degradation*): al pasar de 30–50 esquemas, los LLMs confunden argumentos entre herramientas parecidas. Además, aunque el *prompt caching* reduce el costo económico en turnos posteriores, **no libera ventana de contexto** ni evita los límites estrictos de planes gratuitos.
 
 **Sutra** resuelve esto con **tres modos de superficie**, arrancando en **`codemode`** por defecto:
 
@@ -13,7 +13,7 @@ El contrato completo de **Sutra v1.0.0** (arquitectura Clean-Room modular) reún
 | **`codemode`** *(por defecto)* | 4 | 7 760 B | ~1 940 – 2 350 | **−98.1 %** | **Uso general, tareas multi-paso y cuentas gratuitas** |
 | **`facade`** | 4 | 6 842 B | ~1 710 – 2 070 | **−98.3 %** | **Flujos paso a paso sin scripts** con mínimo contexto inicial |
 | **`full` + `pack core`** | 4 | 10 300 B | ~2 575 – 3 120 | **−97.5 %** | Uso acotado a un solo ToolPack |
-| **`full`** | 130+ *(de 149 totales)* | 409 224 B | ~102 300 – 124 000 | base | Clientes Pro / Max / API que prefieren ver el catálogo directo |
+| **`full`** | 130+ *(de 149 totales)* | 409 224 B | ~102 300 – 130 000 | base | Clientes Pro / Max / API que prefieren ver el catálogo directo |
 
 *\*Rango estimado entre 4.0 bytes/token (texto estándar) y 3.3 bytes/token (JSON denso).*
 

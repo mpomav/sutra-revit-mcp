@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/mpomav/sutra-revit-mcp/releases/latest"><img src="https://img.shields.io/github/v/release/mpomav/sutra-revit-mcp?label=release&color=E06400" alt="Release" /></a>
   <img src="https://img.shields.io/badge/Revit-2023%E2%80%932027-0696D7" alt="Revit 2023-2027" />
-  <img src="https://img.shields.io/badge/tools-124%20clean--room-1F9D68" alt="124 clean-room tools" />
+  <img src="https://img.shields.io/badge/tools-130%20clean--room-1F9D68" alt="130 clean-room tools" />
   <img src="https://img.shields.io/badge/Code%20Mode-default-E06400" alt="Code Mode default" />
   <a href="PROVENANCE.md"><img src="https://img.shields.io/badge/provenance-clean--room%20audited-6E56CF" alt="Clean-room audited" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0" /></a>
@@ -26,7 +26,7 @@
 
 **Sutra** *(from the Nepali/Sanskrit **Sutradhara** — the master builder who holds the layout cord)* is a **clean-room, modular MCP server and Autodesk Revit 2023–2027 add-in** connecting AI assistants (**Claude Desktop, Claude Code, Codex, Cursor, Windsurf, ChatGPT Work**) to a live Revit session on Windows.
 
-Built from scratch across **9 domain modules** and **124 verified tools** (115 Revit module tools + 9 host-resident tools — see [PROVENANCE.md](PROVENANCE.md)).
+Built from scratch across **9 domain modules** and **130 verified tools** (118 Revit module tools + 9 host-resident tools — see [PROVENANCE.md](PROVENANCE.md)).
 
 ### Why Sutra is built differently
 
@@ -44,7 +44,7 @@ Switch between **`codemode`** *(default)*, **`facade`**, and **`full`** via `SCI
 
 ---
 
-## Clean-Room Modular Architecture (124 tools)
+## Clean-Room Modular Architecture (130 tools)
 
 | Layer / Module | Role |
 | --- | --- |
@@ -53,7 +53,7 @@ Switch between **`codemode`** *(default)*, **`facade`**, and **`full`** via `SCI
 | **`Scio.Server`** | Standalone MCP stdio host (`codemode` / `facade` / `full`), hardened `CodeModeEngine`, local SQLite analytics (`scio_query_local`, `scio_report`, `scio_batch_audit`, `scio_progress_takeoff`), workflow recommender (`scio_suggest_workflow`), and opt-in telemetry (`scio_telemetry`, **OFF by default**). |
 | **`Scio.Revit.Host` & `Sdk`** | Multi-target Revit add-in (`net48` for 2023–2024, `net8.0-windows` for 2025–2026, `net10.0-windows` for 2027) with dynamic module discovery. |
 | **`Scio.Revit.Ui`** | Native **Sutra** ribbon tab, unified theme (`ScioTheme`), and AI client handoff tools. |
-| **9 Domain Modules (115 tools)** | `CoreRead` (22), `ScioNative` (11), `Modeling` (19), `Documentation`, `AuditQa`, `Mep`, `Structure`, `CadIfc`, `IsoInterop`. |
+| **9 Domain Modules (118 tools)** | `CoreRead` (22), `ScioNative` (11), `Modeling` (19), `Documentation`, `AuditQa`, `Mep`, `Structure`, `CadIfc`, `IsoInterop`. |
 | **`Scio.Revit.Python`** | Owner-gated isolated IronPython escape hatch (disabled by default). |
 
 ---
