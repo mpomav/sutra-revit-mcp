@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Sutra — Abstract Nepali Sacred Thread and Endless Knot Icon">
+  <defs>
+    <radialGradient id="bgObsidian" cx="50%" cy="42%" r="64%">
+      <stop offset="0%" stop-color="#22191D"/>
+      <stop offset="55%" stop-color="#151418"/>
+      <stop offset="100%" stop-color="#0D0D10"/>
+    </radialGradient>
+    <linearGradient id="sutraGold" gradientUnits="userSpaceOnUse" x1="-150" y1="-150" x2="150" y2="150">
+      <stop offset="0%" stop-color="#FFB85C"/>
+      <stop offset="50%" stop-color="#E06400"/>
+      <stop offset="100%" stop-color="#B8380C"/>
+    </linearGradient>
+    <linearGradient id="sutraLight" gradientUnits="userSpaceOnUse" x1="-150" y1="-150" x2="150" y2="150">
+      <stop offset="0%" stop-color="#FFE4AD"/>
+      <stop offset="55%" stop-color="#F29132"/>
+      <stop offset="100%" stop-color="#D45714"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed rounded modern app icon background (no heavy border) -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bgObsidian)"/>
+
+  <!-- Subtle sacred mandala / drafting compass guides -->
+  <circle cx="256" cy="256" r="184" fill="none" stroke="#F6CE73" stroke-width="1.2" stroke-opacity="0.14"/>
+  <circle cx="256" cy="256" r="136" fill="none" stroke="#E06400" stroke-width="1" stroke-opacity="0.18" stroke-dasharray="4 8"/>
+  <line x1="256" y1="54" x2="256" y2="458" stroke="#F6CE73" stroke-width="1" stroke-opacity="0.12"/>
+  <line x1="54" y1="256" x2="458" y2="256" stroke="#F6CE73" stroke-width="1" stroke-opacity="0.12"/>
+
+  <!--
+    Abstract Nepali Sutra (Endless Knot / Shrivatsa + Sutradhara architectural grid).
+    Built as two interlocking continuous 45-degree geometric ribbon paths with crisp over/under weave gaps.
+  -->
+  <g transform="translate(256 256) rotate(45)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Outer continuous woven diamond-loop -->
+    <rect x="-112" y="-112" width="224" height="224" rx="28" stroke="url(#sutraGold)" stroke-width="26"/>
+
+    <!-- Interlocking shifted horizontal & vertical sutra threads -->
+    <rect x="-148" y="-44" width="296" height="88" rx="44" stroke="#151418" stroke-width="38"/>
+    <rect x="-148" y="-44" width="296" height="88" rx="44" stroke="url(#sutraLight)" stroke-width="22"/>
+
+    <rect x="-44" y="-148" width="88" height="296" rx="44" stroke="#151418" stroke-width="38"/>
+    <rect x="-44" y="-148" width="88" height="296" rx="44" stroke="url(#sutraGold)" stroke-width="22"/>
+
+    <!-- Re-weave top-right & bottom-left crossings so the knot truly interlaces over/under -->
+    <path d="M -96 -44 L 0 -44" stroke="#151418" stroke-width="38"/>
+    <path d="M -96 -44 L 0 -44" stroke="url(#sutraLight)" stroke-width="22"/>
+
+    <path d="M 0 44 L 96 44" stroke="#151418" stroke-width="38"/>
+    <path d="M 0 44 L 96 44" stroke="url(#sutraLight)" stroke-width="22"/>
+
+    <!-- Center bindu (sacred origin / datum point) -->
+    <rect x="-16" y="-16" width="32" height="32" rx="6" fill="#FFE0A3"/>
+  </g>
+</svg>

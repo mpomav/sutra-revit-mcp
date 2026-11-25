@@ -53,10 +53,19 @@ namespace Scio.Server
                 registry,
                 name: "scio_suggest_workflow",
                 pack: "core",
-                description: "Recommend SCIO Revit MCP v4 tools and workflow steps for a natural-language BIM goal (ES/EN).",
+                description: "Recommend Sutra v1.0.0 tools and workflow steps for a natural-language BIM goal (ES/EN).",
                 readOnly: true,
                 openWorld: false,
                 executor: (args, ct) => SuggestWorkflowTool.Handle(registry, args));
+
+            Register(
+                registry,
+                name: "scio_telemetry",
+                pack: "local",
+                description: "Strictly opt-in anonymous usage telemetry (OFF by default): status, preview payload, flush (refused when OFF), or clear.",
+                readOnly: false,
+                openWorld: true,
+                executor: (args, ct) => TelemetryTool.Handle(args, ct));
         }
 
         private static void Register(

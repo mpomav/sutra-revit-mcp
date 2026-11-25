@@ -1,0 +1,18 @@
+# Sutra — Revit MCP (by SCIO DC)
+
+> Clean-room, modular Model Context Protocol (MCP) server and Autodesk Revit
+> 2023–2027 add-in built from scratch by Marco Poma / SCIO DC under Apache-2.0.
+
+## Canonical links
+
+- Repository: https://github.com/mpomav/sutra-revit-mcp
+- Releases: https://github.com/mpomav/sutra-revit-mcp/releases
+- Provenance audit: https://github.com/mpomav/sutra-revit-mcp/blob/main/PROVENANCE.md
+- AI Context Modes guide: https://github.com/mpomav/sutra-revit-mcp/blob/main/docs/TOKEN-MODES.md
+
+## Architecture & capabilities (v1.0.0)
+
+- **124 verified tools** across 9 modular Revit domain assemblies (`CoreRead`, `ScioNative`, `Modeling`, `Documentation`, `AuditQa`, `Mep`, `Structure`, `CadIfc`, `IsoInterop`) plus host-resident server tools (`scio_target`, `scio_code_mode`, `scio_query_local`, `scio_report`, `scio_batch_audit`, `scio_progress_takeoff`, `scio_suggest_workflow`, `scio_telemetry`, `scio_health`).
+- **Default schema mode:** `codemode` (4 meta-tools with on-demand `scio_list_tools` / `scio_describe_tool` and a hardened, fail-closed local JS sandbox with `read_only: true` default). Switchable to `facade` or `full` via `SCIO_SCHEMA_MODE` or `%USERPROFILE%\.scio\settings.json`.
+- **Opt-in telemetry:** `scio_telemetry` is OFF by default (`telemetry_opt_in: false`) and never collects IP addresses, file paths, or model content.
+- **Multi-target Revit support:** `net48` (Revit 2023–2024), `net8.0-windows` (Revit 2025–2026), `net10.0-windows` (Revit 2027).

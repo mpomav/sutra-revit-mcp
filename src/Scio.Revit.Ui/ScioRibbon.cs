@@ -13,7 +13,7 @@ namespace Scio.Revit.Ui
 {
     public sealed class ScioBridgeStatusSnapshot
     {
-        public string Version { get; set; } = "4.0.0-alpha.1";
+        public string Version { get; set; } = "1.0.0";
         public int RevitYear { get; set; }
         public string PipeName { get; set; } = string.Empty;
         public string ContractHash { get; set; } = string.Empty;
@@ -35,7 +35,7 @@ namespace Scio.Revit.Ui
 
     public static class ScioRibbon
     {
-        public const string TabName = "SCIO BIM Hub";
+        public const string TabName = "Sutra";
 
         public static void Build(UIControlledApplication app)
         {

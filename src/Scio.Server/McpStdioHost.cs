@@ -23,11 +23,33 @@ namespace Scio.Server
         public McpStdioHost(ServerToolRegistry registry, string? schemaMode = null)
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-            _schemaMode = (schemaMode ?? Environment.GetEnvironmentVariable("SCIO_SCHEMA_MODE") ?? "full")
-                .Trim()
-                .ToLowerInvariant();
+            _schemaMode = ResolveSchemaMode(schemaMode);
 
             RegisterBuiltInCoreTools();
+        }
+
+        private static string ResolveSchemaMode(string? explicitMode)
+        {
+            string? raw = explicitMode ?? Environment.GetEnvironmentVariable("SCIO_SCHEMA_MODE");
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                raw = ReadSettingString("schema_mode");
+            }
+            string norm = (raw ?? "codemode").Trim().ToLowerInvariant();
+            if (norm == "code_mode" || norm == "code-mode") norm = "codemode";
+            return (norm == "full" || norm == "facade" || norm == "codemode") ? norm : "codemode";
+        }
+
+        private static string? ReadSettingString(string key)
+        {
+            try
+            {
+                string path = Path.Combine(ScioRuntimePaths.DataRoot, "settings.json");
+                if (!File.Exists(path)) return null;
+                var obj = JObject.Parse(File.ReadAllText(path));
+                return obj[key]?.ToString();
+            }
+            catch { return null; }
         }
 
         private void RegisterBuiltInCoreTools()

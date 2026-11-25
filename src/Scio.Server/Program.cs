@@ -10,6 +10,11 @@ namespace Scio.Server
     {
         public static async Task<int> Main(string[] args)
         {
+            if (args != null && args.Length == 1 && TryPrintHiddenEpigraph(args[0]))
+            {
+                return 0;
+            }
+
             Console.InputEncoding = Encoding.UTF8;
             Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
@@ -34,6 +39,30 @@ namespace Scio.Server
 
             await host.RunAsync(Console.In, Console.Out, cts.Token).ConfigureAwait(false);
             return 0;
+        }
+
+        private static bool TryPrintHiddenEpigraph(string flag)
+        {
+            if (string.IsNullOrWhiteSpace(flag)) return false;
+            string f = flag.Trim().ToLowerInvariant();
+            if (f != "--marco" && f != "--scio" && f != "--filosofia" && f != "--wisdom")
+                return false;
+
+            string[] aphorisms =
+            {
+                "\"Modelamos como quien ya construyo.\" — Marco Poma · SCIO DC",
+                "\"No es sabio el que promete en papel, sino el que mide en obra y vuelve a leer la realidad.\" — Marco Poma · SCIO",
+                "\"La forma obedece al peso, el modelo a la obra, y el codigo a la verdad verificada.\" — Sutra · SCIO DC · Lima, Peru",
+                "\"Quien construye dos veces —primero en pensamiento y luego en concreto— descubre que el rigor es una forma de respeto.\" — Marco Poma · SCIO",
+                "\"Todo puente verdadero une dos orillas sin mentir sobre el vacio que cruza.\" — Sutra Revit MCP · Marco Poma"
+            };
+
+            int idx = f == "--marco" ? 0
+                    : f == "--scio" ? 2
+                    : Math.Abs(DateTime.UtcNow.DayOfYear) % aphorisms.Length;
+
+            Console.Out.WriteLine(aphorisms[idx]);
+            return true;
         }
     }
 }
