@@ -35,12 +35,7 @@ namespace Scio.Ipc
                 NamedPipeServerStream? server = null;
                 try
                 {
-                    server = new NamedPipeServerStream(
-                        _pipeName,
-                        PipeDirection.InOut,
-                        NamedPipeServerStream.MaxAllowedServerInstances,
-                        PipeTransmissionMode.Byte,
-                        PipeOptions.Asynchronous);
+                    server = PipeSecurityFactory.CreateServer(_pipeName);
 
                     await server.WaitForConnectionAsync(ct).ConfigureAwait(false);
                     var accepted = server;
@@ -122,7 +117,7 @@ namespace Scio.Ipc
 
         public async Task<ToolResponse> SendAsync(ToolRequest request, int connectTimeoutMs = 5000, CancellationToken ct = default)
         {
-            using (var client = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous))
+            using (var client = CreateSecuredClientStream(_pipeName))
             using (var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
                 timeoutCts.CancelAfter(Math.Max(request.TimeoutMs, connectTimeoutMs));
@@ -150,6 +145,49 @@ namespace Scio.Ipc
                 var response = await PipeFraming.ReadMessageAsync<ToolResponse>(client, timeoutCts.Token).ConfigureAwait(false);
                 return response ?? ToolResponse.Failure(request.RequestId, "empty_response", "Revit closed the IPC connection without a reply.");
             }
+        }
+
+        private static NamedPipeClientStream CreateSecuredClientStream(string pipeName)
+        {
+#if NET8_0_OR_GREATER
+            return new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+#else
+            return new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+#endif
+        }
+    }
+
+    internal static class PipeSecurityFactory
+    {
+        public static NamedPipeServerStream CreateServer(string pipeName)
+        {
+#if NET8_0_OR_GREATER
+            return new NamedPipeServerStream(
+                pipeName,
+                PipeDirection.InOut,
+                NamedPipeServerStream.MaxAllowedServerInstances,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+#else
+            var security = new PipeSecurity();
+            var user = System.Security.Principal.WindowsIdentity.GetCurrent().User;
+            if (user != null)
+            {
+                security.AddAccessRule(new PipeAccessRule(
+                    user,
+                    PipeAccessRights.FullControl,
+                    System.Security.AccessControl.AccessControlType.Allow));
+            }
+            return new NamedPipeServerStream(
+                pipeName,
+                PipeDirection.InOut,
+                NamedPipeServerStream.MaxAllowedServerInstances,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous,
+                4096,
+                4096,
+                security);
+#endif
         }
     }
 }

@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/Revit-2023%E2%80%932027-0696D7" alt="Revit 2023-2027" />
   <img src="https://img.shields.io/badge/tools-130%20clean--room-1F9D68" alt="130 clean-room tools" />
   <img src="https://img.shields.io/badge/Code%20Mode-default-E06400" alt="Code Mode default" />
-  <a href="PROVENANCE.md"><img src="https://img.shields.io/badge/provenance-clean--room%20audited-6E56CF" alt="Clean-room audited" /></a>
+  <a href="PROVENANCE.md"><img src="https://img.shields.io/badge/architecture-modular%20clean--room-6E56CF" alt="Modular clean-room architecture" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0" /></a>
 </p>
 
@@ -49,7 +49,7 @@ Switch between **`codemode`** *(default)*, **`facade`**, and **`full`** via `SCI
 | Layer / Module | Role |
 | --- | --- |
 | **`Scio.Abstractions`** | Attribute-driven `[ScioTool]` contracts, reflection JSON Schema generation, and standardized verification envelopes. |
-| **`Scio.Ipc`** | Length-prefixed Windows Named Pipes transport with cancellation, timeouts, and FIFO queuing. |
+| **`Scio.Ipc`** | Length-prefixed Windows Named Pipes hardened with `PipeOptions.CurrentUserOnly` (`.NET 8/10`) and per-user SID `PipeSecurity` ACL (`.NET 4.8`), with cancellation, timeouts, and FIFO queuing. |
 | **`Scio.Server`** | Standalone MCP stdio host (`codemode` / `facade` / `full`), hardened `CodeModeEngine`, local SQLite analytics (`scio_query_local`, `scio_report`, `scio_batch_audit`, `scio_progress_takeoff`), workflow recommender (`scio_suggest_workflow`), and opt-in telemetry (`scio_telemetry`, **OFF by default**). |
 | **`Scio.Revit.Host` & `Sdk`** | Multi-target Revit add-in (`net48` for 2023–2024, `net8.0-windows` for 2025–2026, `net10.0-windows` for 2027) with dynamic module discovery. |
 | **`Scio.Revit.Ui`** | Native **Sutra** ribbon tab, unified theme (`ScioTheme`), and AI client handoff tools. |

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFrameworks>net48;net8.0</TargetFrameworks>
     <AssemblyName>Scio.Ipc</AssemblyName>
     <RootNamespace>Scio.Ipc</RootNamespace>
   </PropertyGroup>
