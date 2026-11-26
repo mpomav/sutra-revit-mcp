@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media.Imaging;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
@@ -53,68 +51,67 @@ namespace Scio.Revit.Ui
                 asmPath,
                 typeof(ConnectionStatusCommand).FullName)
             {
-                ToolTip = "Ver estado del puente SCIO Revit MCP v4, módulos cargados y hash de contrato."
+                ToolTip = "Ver estado del puente SCIO Revit MCP, módulos cargados y hash de contrato.",
+                LongDescription = "Muestra el estado en vivo del puente MCP, la cantidad de herramientas registradas, el perfil de permisos activo y permite copiar el diagnóstico."
             };
-            TrySetIcon(statusData, "scio_status_32.png", "scio_status_16.png");
+            SetVectorIcon(statusData, RibbonIconKind.Status);
             panel.AddItem(statusData);
 
             var advData = new PulldownButtonData("ScioAdvancedOptions", "Opciones\navanzadas")
             {
-                ToolTip = "Controles locales del propietario: pausar MCP y autorización de Python."
+                ToolTip = "Controles locales del propietario: pausar MCP y autorización de Python.",
+                LongDescription = "Permite pausar o reanudar la ejecución remota de herramientas MCP y autorizar o revocar scio_execute_python en esta sesión."
             };
-            TrySetIcon(advData, "scio_settings_32.png", "scio_settings_16.png");
+            SetVectorIcon(advData, RibbonIconKind.Settings);
             var pulldown = panel.AddItem(advData) as PulldownButton;
             if (pulldown != null)
             {
-                pulldown.AddPushButton(new PushButtonData(
+                var pauseBtn = new PushButtonData(
                     "ScioTogglePause",
                     "Pausar / Reanudar MCP",
                     asmPath,
                     typeof(TogglePauseCommand).FullName)
                 {
                     ToolTip = "Pausa o reanuda la ejecución remota de herramientas MCP en esta sesión de Revit."
-                });
+                };
+                SetVectorIcon(pauseBtn, RibbonIconKind.Pause);
+                pulldown.AddPushButton(pauseBtn);
 
-                pulldown.AddPushButton(new PushButtonData(
+                var pyBtn = new PushButtonData(
                     "ScioTogglePython",
                     "Python ON / OFF",
                     asmPath,
                     typeof(TogglePythonCommand).FullName)
                 {
                     ToolTip = "Autoriza o revoca scio_execute_python (SafeWrite <-> UnsafeCode) para esta sesión."
-                });
+                };
+                SetVectorIcon(pyBtn, RibbonIconKind.Python);
+                pulldown.AddPushButton(pyBtn);
             }
+
+            panel.AddSeparator();
+
+            var aboutData = new PushButtonData(
+                "ScioAboutSutra",
+                "Acerca de\nSutra",
+                asmPath,
+                typeof(AboutCommand).FullName)
+            {
+                ToolTip = "Información de Sutra — SCIO Revit MCP, versión, licencia y módulos activos.",
+                LongDescription = "Abre la ventana Acerca de con la versión instalada, información de SCIO DC, estado del puente y enlace a sciodc.com."
+            };
+            SetVectorIcon(aboutData, RibbonIconKind.About);
+            panel.AddItem(aboutData);
         }
 
-        private static void TrySetIcon(ButtonData data, string largeName, string smallName)
+        private static void SetVectorIcon(ButtonData data, RibbonIconKind kind)
         {
             try
             {
-                string asmName = Assembly.GetExecutingAssembly().GetName().Name;
-                var large = LoadPackImage(asmName, largeName);
-                var small = LoadPackImage(asmName, smallName);
-                if (large != null) data.LargeImage = large;
-                if (small != null) data.Image = small;
+                data.LargeImage = RibbonIconRenderer.Render(kind, 32);
+                data.Image = RibbonIconRenderer.Render(kind, 16);
             }
-            catch { /* non-fatal */ }
-        }
-
-        private static BitmapImage? LoadPackImage(string asmName, string fileName)
-        {
-            try
-            {
-                var uri = new Uri($"pack://application:,,,/{asmName};component/Resources/{fileName}", UriKind.Absolute);
-                var bmp = new BitmapImage();
-                bmp.BeginInit();
-                bmp.UriSource = uri;
-                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                bmp.EndInit();
-                return bmp;
-            }
-            catch
-            {
-                return null;
-            }
+            catch { /* non-fatal: never block Revit startup */ }
         }
     }
 
@@ -125,17 +122,44 @@ namespace Scio.Revit.Ui
         {
             var snap = ScioBridgeUiHooks.GetStatus?.Invoke() ?? new ScioBridgeStatusSnapshot();
             string modules = snap.LoadedModules.Count == 0 ? "(ninguno)" : string.Join(", ", snap.LoadedModules);
-            string body =
-                $"Producto: SCIO Revit MCP v{snap.Version}\n" +
-                $"Revit: {snap.RevitYear}\n" +
-                $"Estado: {(snap.IsPaused ? "PAUSADO" : "ACTIVO")}\n" +
-                $"Perfil de permisos: {snap.PermissionProfile}\n" +
-                $"Herramientas registradas: {snap.RegisteredTools}\n" +
-                $"Módulos: {modules}\n" +
-                $"Contract Hash: {snap.ContractHash}\n" +
-                $"Named Pipe: {snap.PipeName}";
+            string techDetail =
+                $"Producto      : Sutra — SCIO Revit MCP v{snap.Version}\n" +
+                $"Revit         : {snap.RevitYear}\n" +
+                $"Estado        : {(snap.IsPaused ? "PAUSADO" : "ACTIVO")}\n" +
+                $"Permisos      : {snap.PermissionProfile}\n" +
+                $"Herramientas  : {snap.RegisteredTools}\n" +
+                $"Módulos       : {modules}\n" +
+                $"Contract Hash : {snap.ContractHash}\n" +
+                $"Named Pipe    : {snap.PipeName}";
 
-            TaskDialog.Show("SCIO Revit MCP — Estado de conexión", body);
+            IntPtr owner = commandData?.Application?.MainWindowHandle ?? IntPtr.Zero;
+            ScioDialog.ShowResult(
+                owner: owner,
+                title: "Estado de conexión",
+                eyebrow: "SUTRA · SCIO REVIT MCP",
+                headline: snap.IsPaused
+                    ? "El puente MCP está en pausa en esta sesión de Revit."
+                    : "El puente MCP está escuchando y listo para recibir comandos.",
+                summary: snap.IsPaused
+                    ? "PAUSADO — las llamadas remotas están temporalmente bloqueadas."
+                    : $"ACTIVO — conectado en Revit {snap.RevitYear} con {snap.RegisteredTools} herramientas registradas.",
+                kpis: new[]
+                {
+                    new ScioDialogKpi("Revit", snap.RevitYear > 0 ? snap.RevitYear.ToString() : "—", "Sesión local"),
+                    new ScioDialogKpi("Herramientas", snap.RegisteredTools.ToString(), $"{snap.LoadedModules.Count} módulos", highlight: true),
+                    new ScioDialogKpi("Permisos", snap.PermissionProfile.ToString(), snap.IsPaused ? "Pausado" : "Activo")
+                },
+                monoBody: techDetail,
+                actions: new[]
+                {
+                    new ScioDialogAction("Copiar diagnóstico", ScioTheme.Glyph.Copy, () =>
+                    {
+                        try { Clipboard.SetText(techDetail); } catch { }
+                    })
+                },
+                closeLabel: "Cerrar",
+                isError: snap.IsPaused);
+
             return Result.Succeeded;
         }
     }
@@ -146,11 +170,15 @@ namespace Scio.Revit.Ui
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             bool paused = ScioBridgeUiHooks.TogglePause?.Invoke() ?? false;
-            TaskDialog.Show(
-                "SCIO Revit MCP",
+            IntPtr owner = commandData?.Application?.MainWindowHandle ?? IntPtr.Zero;
+            ScioDialog.ShowMessage(
+                owner,
+                "Control del puente MCP",
+                paused ? "Puente MCP PAUSADO" : "Puente MCP REANUDADO",
                 paused
-                    ? "Puente MCP PAUSADO. Las llamadas remotas serán rechazadas hasta que lo reanudes."
-                    : "Puente MCP REANUDADO. Las herramientas vuelven a aceptar solicitudes.");
+                    ? "Las llamadas remotas serán rechazadas hasta que vuelvas a reanudar el puente desde Opciones avanzadas."
+                    : "El puente vuelve a aceptar solicitudes de clientes MCP en esta sesión de Revit.",
+                isError: paused);
             return Result.Succeeded;
         }
     }
@@ -161,11 +189,28 @@ namespace Scio.Revit.Ui
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             var profile = ScioBridgeUiHooks.TogglePythonAccess?.Invoke() ?? PermissionProfile.SafeWrite;
-            TaskDialog.Show(
-                "SCIO Revit MCP — Python",
-                profile == PermissionProfile.UnsafeCode
-                    ? "Python AUTORIZADO (UnsafeCode). scio_execute_python está habilitado en esta sesión."
-                    : "Python DESACTIVADO (SafeWrite). Solo las herramientas tipadas están habilitadas.");
+            bool enabled = profile == PermissionProfile.UnsafeCode;
+            IntPtr owner = commandData?.Application?.MainWindowHandle ?? IntPtr.Zero;
+            ScioDialog.ShowMessage(
+                owner,
+                "Autorización de Python",
+                enabled ? "Python AUTORIZADO (UnsafeCode)" : "Python DESACTIVADO (SafeWrite)",
+                enabled
+                    ? "scio_execute_python está habilitado para esta sesión de Revit. Puedes revocarlo en cualquier momento desde Opciones avanzadas."
+                    : "Solo las herramientas tipadas están habilitadas. La ejecución arbitraria de Python queda bloqueada.",
+                isError: false);
+            return Result.Succeeded;
+        }
+    }
+
+    [Transaction(TransactionMode.ReadOnly)]
+    public sealed class AboutCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            var snap = ScioBridgeUiHooks.GetStatus?.Invoke() ?? new ScioBridgeStatusSnapshot();
+            IntPtr owner = commandData?.Application?.MainWindowHandle ?? IntPtr.Zero;
+            AboutDialog.Show(owner, snap);
             return Result.Succeeded;
         }
     }
