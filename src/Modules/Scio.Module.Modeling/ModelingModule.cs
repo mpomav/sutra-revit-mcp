@@ -36,6 +36,18 @@ namespace Scio.Module.Modeling
             yield return new ManageStylesCommand();
             yield return new ManageUnitsCommand();
             yield return new ManageSystemTypesCommand();
+
+            // Ola 3 — Construction Modeling, Finishes, Sweeps, Toposolid & Regrouping (9)
+            yield return new SplitMultilayerWallsCommand();
+            yield return new SplitMultilayerSlabsCommand();
+            yield return new SplitFloorLoopsCommand();
+            yield return new CopySlabElevationsCommand();
+            yield return new RectangularizeWallsCommand();
+            yield return new WallSweepCommand();
+            yield return new RoomBoundariesCommand();
+            yield return new RoomFinishesCommand();
+            yield return new ToposolidOpsCommand();
+            yield return new RegroupByParamCommand();
         }
     }
 }

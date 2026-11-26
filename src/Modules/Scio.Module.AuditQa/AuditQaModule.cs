@@ -18,6 +18,7 @@ namespace Scio.Module.AuditQa
             yield return new ManageLinksCommand();
             yield return new CoordinationIssuesCommand();
             yield return new AuditSupportCommand();
+            yield return new PurgeUnusedCommand();
         }
     }
 }

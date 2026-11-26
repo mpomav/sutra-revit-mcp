@@ -16,6 +16,7 @@ namespace Scio.Module.Structure
             yield return new StructuralConnectionsCommand();
             yield return new AnalyticalAuditCommand();
             yield return new StructuralScheduleParserCommand();
+            yield return new PlanStructureCommand();
         }
     }
 }
