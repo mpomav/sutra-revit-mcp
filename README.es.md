@@ -62,8 +62,8 @@ Cambia entre **`codemode`** *(por defecto)*, **`facade`** y **`full`** mediante 
 
 Cierra todas las sesiones de Autodesk Revit antes de instalar.
 
-### Desde la release oficial
-Descarga el paquete `v1.0.0` desde [GitHub Releases](https://github.com/mpomav/sutra-revit-mcp/releases/latest) y ejecuta `install.ps1`.
+### Desde el instalador oficial (recomendado)
+Descarga `sutra-revit-mcp-1.1.0-setup.exe` desde [GitHub Releases](https://github.com/mpomav/sutra-revit-mcp/releases/latest) y ejecútalo. El instalador detecta y actualiza automáticamente instalaciones previas de Sutra/SCIO en todas las versiones de Revit instaladas (`2023–2027`).
 
 ### Compilar desde código fuente
 ```powershell

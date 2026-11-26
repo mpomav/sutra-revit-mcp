@@ -54,7 +54,23 @@ namespace Scio.Server
             catch { return null; }
         }
 
-        public static void RecordToolCall(string toolName, bool ok, long elapsedMs, string schemaMode, string version = "1.0.0")
+        private static string CurrentVersion { get; } = ResolveAssemblyVersion();
+
+        private static string ResolveAssemblyVersion()
+        {
+            var asm = typeof(TelemetryTool).Assembly;
+            var info = (System.Reflection.AssemblyInformationalVersionAttribute?)Attribute.GetCustomAttribute(
+                asm, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+            if (info != null && !string.IsNullOrWhiteSpace(info.InformationalVersion))
+            {
+                int plus = info.InformationalVersion.IndexOf('+');
+                return plus > 0 ? info.InformationalVersion.Substring(0, plus) : info.InformationalVersion;
+            }
+            var v = asm.GetName().Version;
+            return v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.1.0";
+        }
+
+        public static void RecordToolCall(string toolName, bool ok, long elapsedMs, string schemaMode, string? version = null)
         {
             try
             {
@@ -76,7 +92,7 @@ namespace Scio.Server
                     ["ok"] = ok,
                     ["ms"] = Math.Max(0, elapsedMs),
                     ["schema_mode"] = string.IsNullOrWhiteSpace(schemaMode) ? "codemode" : schemaMode,
-                    ["version"] = string.IsNullOrWhiteSpace(version) ? "1.0.0" : version
+                    ["version"] = string.IsNullOrWhiteSpace(version) ? CurrentVersion : version
                 };
 
                 lock (FileLock)
@@ -228,7 +244,7 @@ namespace Scio.Server
         {
             var byTool = new JObject();
             var byMode = new JObject();
-            string latestVersion = "1.0.0";
+            string latestVersion = CurrentVersion;
 
             foreach (var group in events.GroupBy(e => e.Value<string>("tool") ?? "unknown", StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal))
             {

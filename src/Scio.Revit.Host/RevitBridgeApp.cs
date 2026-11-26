@@ -174,8 +174,8 @@ namespace Scio.Revit.Host
                 var data = new JObject
                 {
                     ["status"] = "healthy",
-                    ["product"] = "SCIO Revit MCP",
-                    ["version"] = "4.0.0-alpha.1",
+                    ["product"] = "Sutra — Revit MCP",
+                    ["version"] = RevitBridgeApp.CurrentVersion,
                     ["revit_year"] = context.RevitYear,
                     ["permission_profile"] = context.PermissionProfile.ToString(),
                     ["paused"] = _owner.IsPaused,
@@ -201,6 +201,22 @@ namespace Scio.Revit.Host
     /// </summary>
     public sealed class RevitBridgeApp : IExternalApplication
     {
+        internal static string CurrentVersion { get; } = ResolveAssemblyVersion();
+
+        private static string ResolveAssemblyVersion()
+        {
+            var asm = typeof(RevitBridgeApp).Assembly;
+            var info = (System.Reflection.AssemblyInformationalVersionAttribute?)Attribute.GetCustomAttribute(
+                asm, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+            if (info != null && !string.IsNullOrWhiteSpace(info.InformationalVersion))
+            {
+                int plus = info.InformationalVersion.IndexOf('+');
+                return plus > 0 ? info.InformationalVersion.Substring(0, plus) : info.InformationalVersion;
+            }
+            var v = asm.GetName().Version;
+            return v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.1.0";
+        }
+
         private ScioPipeServer? _pipeServer;
         private RevitCommandDispatcher? _dispatcher;
         private int _revitYear;
@@ -226,13 +242,13 @@ namespace Scio.Revit.Host
                 PipeName = pipeName,
                 Pid = _pid,
                 RevitYear = _revitYear,
-                Version = "4.0.0-alpha.1",
+                Version = CurrentVersion,
                 ContractHash = _dispatcher.ContractHash
             });
 
             ScioBridgeUiHooks.GetStatus = () => new ScioBridgeStatusSnapshot
             {
-                Version = "4.0.0-alpha.1",
+                Version = CurrentVersion,
                 RevitYear = _revitYear,
                 PipeName = pipeName,
                 ContractHash = _dispatcher.ContractHash,

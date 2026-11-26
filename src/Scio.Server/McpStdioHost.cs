@@ -17,6 +17,22 @@ namespace Scio.Server
     public sealed class McpStdioHost
     {
         private const string ProtocolVersion = "2025-03-26";
+
+        private static string CurrentVersion { get; } = ResolveAssemblyVersion();
+
+        private static string ResolveAssemblyVersion()
+        {
+            var asm = typeof(McpStdioHost).Assembly;
+            var info = (System.Reflection.AssemblyInformationalVersionAttribute?)Attribute.GetCustomAttribute(
+                asm, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+            if (info != null && !string.IsNullOrWhiteSpace(info.InformationalVersion))
+            {
+                int plus = info.InformationalVersion.IndexOf('+');
+                return plus > 0 ? info.InformationalVersion.Substring(0, plus) : info.InformationalVersion;
+            }
+            var v = asm.GetName().Version;
+            return v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.1.0";
+        }
         private readonly ServerToolRegistry _registry;
         private readonly string _schemaMode;
 
@@ -297,7 +313,7 @@ namespace Scio.Server
                         ["serverInfo"] = new JObject
                         {
                             ["name"] = "scio-revit-mcp",
-                            ["version"] = "4.0.0-alpha.1"
+                            ["version"] = CurrentVersion
                         }
                     });
 

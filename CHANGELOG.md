@@ -1,5 +1,15 @@
 # Changelog — Sutra (Revit MCP by SCIO DC)
 
+## v1.1.0 (2026-11-26)
+
+Windows Setup installer with automatic in-place upgrades and unified assembly versioning across all components.
+
+### Highlights & Improvements
+
+- **Windows Setup installer with in-place upgrades (`build/sutra-revit-mcp.iss`):** detects previous Sutra (`v1.0.x`) and legacy SCIO Revit MCP installations, stops idle `scio-revit-mcp.exe` processes, cleans stale server/add-in folders and legacy manifests (`Scio.addin`, `.previous`, `.installing`), and updates every installed Autodesk Revit version (`2023–2027`) cleanly in place.
+- **Unified version reporting (`RevitBridgeApp`, `McpStdioHost`, `TelemetryTool`):** `scio_health`, `scio_target`, MCP `initialize`, **Acerca de Sutra**, and opt-in telemetry now read the canonical assembly version directly from `Directory.Build.props` (`1.1.0`) instead of hardcoded placeholders.
+- **Reproducible release packager (`build/pack-release.ps1`):** runs unit/IPC tests, publishes the self-contained `win-x64` MCP server, compiles per-year Revit `2023–2027` add-ins, builds `sutra-revit-mcp-1.1.0-setup.exe` + portable `.zip`, and writes `SHA256SUMS.txt`.
+
 ## v1.0.1 (2026-11-26)
 
 Patch release fixing tool discovery, missing tool packs, and Revit Ribbon UX.
