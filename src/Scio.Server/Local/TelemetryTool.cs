@@ -95,10 +95,11 @@ namespace Scio.Server
             {
                 case "status": return HandleStatus();
                 case "preview": return HandlePreview();
+                case "insights": return DistillTool.Handle(new JObject { ["operation"] = "insights", ["limit"] = args?.Value<int?>("limit") ?? 100 }, ct);
                 case "flush": return HandleFlush(args, ct);
                 case "clear": return HandleClear();
                 default:
-                    throw new ToolRefusalException("Unsupported operation '" + op + "'. Expected: status, preview, flush, clear.");
+                    throw new ToolRefusalException("Unsupported operation '" + op + "'. Expected: status, preview, insights, flush, clear.");
             }
         }
 

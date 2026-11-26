@@ -62,10 +62,37 @@ namespace Scio.Server
                 registry,
                 name: "scio_telemetry",
                 pack: "local",
-                description: "Strictly opt-in anonymous usage telemetry (OFF by default): status, preview payload, flush (refused when OFF), or clear.",
+                description: "Strictly opt-in anonymous usage telemetry (OFF by default) plus local usage insights: status, preview, insights, flush (refused when OFF), or clear.",
                 readOnly: false,
                 openWorld: true,
                 executor: (args, ct) => TelemetryTool.Handle(args, ct));
+
+            Register(
+                registry,
+                name: "scio_repair_memory",
+                pack: "local",
+                description: "Local redacted failure-and-remedy memory (list, advice, observe, remedy, quarantine, release).",
+                readOnly: false,
+                openWorld: false,
+                executor: (args, ct) => RepairMemoryTool.Handle(args, ct));
+
+            Register(
+                registry,
+                name: "scio_promote_script",
+                pack: "local",
+                description: "Governed script promotion ladder (list, show, propose, review, approve, activate, deactivate, source, resolve, invocation, export_pyrevit).",
+                readOnly: false,
+                openWorld: true,
+                executor: (args, ct) => PromoteScriptTool.Handle(args, ct));
+
+            Register(
+                registry,
+                name: "scio_distill",
+                pack: "local",
+                description: "Distill repeated MCP sessions into zero-LLM pyRevit buttons and inspect tool usage/polish insights (sessions, insights, plan, generate_pyrevit).",
+                readOnly: true,
+                openWorld: false,
+                executor: (args, ct) => DistillTool.Handle(args, ct));
         }
 
         private static void Register(

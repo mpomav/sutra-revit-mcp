@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build core & server
+        run: |
+          dotnet build src/Scio.Abstractions/Scio.Abstractions.csproj -c Release
+          dotnet build src/Scio.Ipc/Scio.Ipc.csproj -c Release
+          dotnet build src/Scio.Server/Scio.Server.csproj -c Release
+
+      - name: Run unit tests
+        run: dotnet test tests/Scio.Core.Tests/Scio.Core.Tests.csproj -c Release --nologo
+
+      - name: Clean-room audit
+        shell: pwsh
+        run: pwsh -File build/audit-clean-room.ps1

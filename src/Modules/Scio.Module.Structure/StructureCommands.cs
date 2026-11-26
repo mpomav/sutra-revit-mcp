@@ -162,7 +162,7 @@ namespace Scio.Module.Structure
         [ScioParam("normal_vec", "Normal vector [nx, ny, nz] for rebar distribution plane (default [0,0,1]).")]
         public List<double>? NormalVec { get; set; }
 
-        [ScioParam("bar_type", "Optional RebarBarType name substring (e.g. '16', '5/8').")]
+        [ScioParam("bar_type", "Exact RebarBarType name loaded in the document (required, e.g. '16mm', '5/8\"').", Required = true)]
         public string BarType { get; set; } = string.Empty;
 
         [ScioParam("count", "Number of bars in fixed-number layout (default 1).")]
@@ -185,10 +185,24 @@ namespace Scio.Module.Structure
                 return ToolResponse.Refusal(request.RequestId, "invalid_request", "Valid 'host_id' and >=2 'points_mm' required.");
 
             string btFilter = request.Arguments.Value<string>("bar_type") ?? string.Empty;
-            var barType = new FilteredElementCollector(doc).OfClass(typeof(RebarBarType)).Cast<RebarBarType>()
-                .FirstOrDefault(b => string.IsNullOrWhiteSpace(btFilter) || b.Name.IndexOf(btFilter, StringComparison.OrdinalIgnoreCase) >= 0);
-            if (barType == null)
-                return ToolResponse.Refusal(request.RequestId, "no_bar_type", "No matching RebarBarType loaded in document.");
+            var loadedBarTypes = new FilteredElementCollector(doc)
+                .OfClass(typeof(RebarBarType))
+                .Cast<RebarBarType>()
+                .ToList();
+            var match = RebarBarTypeMatcher.MatchExact(btFilter, loadedBarTypes.Select(b => b.Name));
+            if (!match.Ok)
+            {
+                var details = new JObject
+                {
+                    ["requested_bar_type"] = btFilter,
+                    ["available_bar_types"] = new JArray(match.AvailableTypes)
+                };
+                if (!string.IsNullOrEmpty(match.DidYouMean))
+                    details["did_you_mean"] = match.DidYouMean;
+                return ToolResponse.Refusal(request.RequestId, match.ErrorCode ?? "no_bar_type", match.ErrorMessage ?? "Invalid bar_type.", details: details);
+            }
+
+            var barType = loadedBarTypes.First(b => string.Equals(b.Name.Trim(), match.MatchedName, StringComparison.OrdinalIgnoreCase));
 
             var nArr = request.Arguments["normal_vec"] as JArray;
             var normal = nArr != null && nArr.Count >= 3

@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      github-actions-artifacts:
+        patterns:
+          - "actions/upload-artifact"
+          - "actions/download-artifact"
+      codeql-actions:
+        patterns:
+          - "github/codeql-action*"
+      core-actions:
+        patterns:
+          - "actions/checkout"
+          - "actions/setup-dotnet"

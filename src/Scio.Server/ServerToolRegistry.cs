@@ -22,6 +22,8 @@ namespace Scio.Server
         public int? PreferredRevitYear { get; set; }
         public PermissionProfile PermissionProfile { get; set; } = PermissionProfile.SafeWrite;
         public HashSet<string> ActivePacks { get; set; } = ToolPackResolver.ResolveActivePacks(null);
+        public string SchemaMode { get; set; } = "codemode";
+        public SessionTraceRecorder TraceRecorder { get; } = new SessionTraceRecorder();
 
         public async Task<int> HydrateRemoteCatalogAsync(CancellationToken ct, bool force = false)
         {
@@ -92,31 +94,67 @@ namespace Scio.Server
             if (string.IsNullOrWhiteSpace(request.Tool))
                 return ToolResponse.Refusal(request.RequestId, "missing_tool", "Tool name is required.");
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            ToolResponse response;
+
+            if (_descriptors.TryGetValue(request.Tool, out var knownDesc))
+            {
+                var validation = ArgumentValidator.Validate(knownDesc, request.Arguments);
+                if (!validation.Ok)
+                {
+                    response = ToolResponse.Refusal(
+                        request.RequestId,
+                        "invalid_argument",
+                        ArgumentValidator.BuildErrorMessage(request.Tool, validation),
+                        details: ArgumentValidator.BuildErrorDetails(validation));
+                    sw.Stop();
+                    TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+                    TelemetryTool.RecordToolCall(request.Tool, false, sw.ElapsedMilliseconds, SchemaMode);
+                    return response;
+                }
+            }
+
             if (_serverHandlers.TryGetValue(request.Tool, out var localHandler))
             {
-                return await localHandler(request, ct).ConfigureAwait(false);
+                response = await localHandler(request, ct).ConfigureAwait(false);
+                sw.Stop();
+                TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+                TelemetryTool.RecordToolCall(request.Tool, response.Ok, sw.ElapsedMilliseconds, SchemaMode);
+                return response;
             }
 
             if (_descriptors.TryGetValue(request.Tool, out var desc) &&
                 !ToolPackResolver.IsToolVisible(desc, ActivePacks, PermissionProfile))
             {
-                return ToolResponse.Refusal(
+                response = ToolResponse.Refusal(
                     request.RequestId,
                     "tool_not_permitted",
                     $"Tool '{request.Tool}' is not enabled under the active packs or permission profile ({PermissionProfile}).");
+                sw.Stop();
+                TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+                TelemetryTool.RecordToolCall(request.Tool, false, sw.ElapsedMilliseconds, SchemaMode);
+                return response;
             }
 
             string? pipeName = ResolveTargetPipe();
             if (string.IsNullOrWhiteSpace(pipeName))
             {
-                return ToolResponse.Failure(
+                response = ToolResponse.Failure(
                     request.RequestId,
                     "no_revit_session",
                     "No running Autodesk Revit session with SCIO Revit MCP v4 was found. Open Revit first.");
+                sw.Stop();
+                TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+                TelemetryTool.RecordToolCall(request.Tool, false, sw.ElapsedMilliseconds, SchemaMode);
+                return response;
             }
 
             var client = new ScioPipeClient(pipeName);
-            return await client.SendAsync(request, connectTimeoutMs: 5000, ct: ct).ConfigureAwait(false);
+            response = await client.SendAsync(request, connectTimeoutMs: 5000, ct: ct).ConfigureAwait(false);
+            sw.Stop();
+            TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+            TelemetryTool.RecordToolCall(request.Tool, response.Ok, sw.ElapsedMilliseconds, SchemaMode);
+            return response;
         }
 
         public string? ResolveTargetPipe()
