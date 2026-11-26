@@ -47,7 +47,9 @@ namespace Scio.Server
             new[] { "seleccion", "seleccionar", "seleccionado", "selection", "contexto", "context", "navegar", "navigate", "zoom" },
             new[] { "regla", "reglas", "masivo", "lote", "rule", "rules", "batch", "mapeo", "map", "auto" },
             new[] { "familia", "familias", "family", "families", "rfa", "tipo", "tipos", "type", "instancia" },
-            new[] { "crear", "modelar", "generar", "create", "build", "mover", "rotar", "transform", "copiar", "copy", "dividir", "split" },
+            new[] { "mobiliario", "mueble", "muebles", "furniture", "ost_furniture", "equipamiento", "equipment", "silla", "mesa", "escritorio" },
+            new[] { "nivel", "niveles", "level", "levels", "piso", "pisos", "planta", "plantas" },
+            new[] { "crear", "modelar", "generar", "create", "build", "colocar", "place", "ubicar", "insertar", "insert", "mover", "rotar", "transform", "copiar", "copy", "dividir", "split" },
             new[] { "anotar", "cota", "cotas", "etiqueta", "etiquetas", "tag", "tags", "dimension", "dimensions", "annotate", "detalle", "detail" },
             new[] { "grupo", "grupos", "group", "groups", "workset", "worksets", "subproyecto" },
             new[] { "python", "script", "codigo", "macro", "procedimiento", "procedure", "workflow" }

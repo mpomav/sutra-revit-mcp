@@ -17,6 +17,9 @@ namespace Scio.Server
         private readonly Dictionary<string, ServerToolDelegate> _serverHandlers = new Dictionary<string, ServerToolDelegate>(StringComparer.Ordinal);
         private string? _lastHydratedPipe;
         private string? _lastHydratedHash;
+        private string? _lastFailedPipe;
+        private DateTime _lastFailedHydrationUtc = DateTime.MinValue;
+        private static readonly TimeSpan FailedHydrationCooldown = TimeSpan.FromSeconds(3);
 
         public string? PinnedPipeName { get; set; }
         public int? PreferredRevitYear { get; set; }
@@ -27,22 +30,63 @@ namespace Scio.Server
         public SessionTraceRecorder TraceRecorder { get; } = new SessionTraceRecorder();
         public AsyncJobManager Jobs { get; } = new AsyncJobManager();
 
+        /// <summary>Optional test hook overriding IPC _scio_catalog fetch.</summary>
+        public Func<string, CancellationToken, Task<ToolResponse>>? RemoteCatalogFetcher { get; set; }
+
         public async Task<int> HydrateRemoteCatalogAsync(CancellationToken ct, bool force = false)
         {
+            if (MockMode && RemoteCatalogFetcher == null) return 0;
+
             string? pipeName = ResolveTargetPipe();
             if (string.IsNullOrWhiteSpace(pipeName)) return 0;
 
             if (!force && string.Equals(pipeName, _lastHydratedPipe, StringComparison.Ordinal) && !string.IsNullOrEmpty(_lastHydratedHash))
                 return 0;
 
+            if (!force &&
+                string.Equals(pipeName, _lastFailedPipe, StringComparison.Ordinal) &&
+                (DateTime.UtcNow - _lastFailedHydrationUtc) < FailedHydrationCooldown)
+                return 0;
+
             try
             {
-                var client = new ScioPipeClient(pipeName!);
-                var reply = await client.SendAsync(new ToolRequest { Tool = "_scio_catalog" }, connectTimeoutMs: 1500, ct: ct).ConfigureAwait(false);
-                if (!reply.Ok || reply.Data is not JObject data) return 0;
+                ToolResponse reply;
+                if (RemoteCatalogFetcher != null)
+                {
+                    reply = await RemoteCatalogFetcher(pipeName!, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    var client = new ScioPipeClient(pipeName!);
+                    reply = await client.SendAsync(new ToolRequest { Tool = "_scio_catalog" }, connectTimeoutMs: 3000, ct: ct).ConfigureAwait(false);
+                }
+
+                if (!reply.Ok || reply.Data is not JObject data)
+                {
+                    _lastFailedPipe = pipeName;
+                    _lastFailedHydrationUtc = DateTime.UtcNow;
+                    return 0;
+                }
 
                 string? hash = data.Value<string>("contract_hash");
-                if (data["tools"] is not JArray arr) return 0;
+                if (data["tools"] is not JArray arr)
+                {
+                    _lastFailedPipe = pipeName;
+                    _lastFailedHydrationUtc = DateTime.UtcNow;
+                    return 0;
+                }
+
+                // Clear stale remote descriptors only when switching from a previous live Revit pipe to a different one
+                if (!string.IsNullOrEmpty(_lastHydratedPipe) &&
+                    !string.Equals(pipeName, _lastHydratedPipe, StringComparison.Ordinal))
+                {
+                    var staleRemote = _descriptors.Values
+                        .Where(d => !d.ServerSide && !string.Equals(d.Name, "scio_health", StringComparison.Ordinal))
+                        .Select(d => d.Name)
+                        .ToList();
+                    foreach (string name in staleRemote)
+                        _descriptors.Remove(name);
+                }
 
                 int registered = 0;
                 foreach (var item in arr)
@@ -56,11 +100,15 @@ namespace Scio.Server
                 }
 
                 _lastHydratedPipe = pipeName;
-                _lastHydratedHash = hash;
+                _lastHydratedHash = !string.IsNullOrEmpty(hash) ? hash : "hydrated";
+                _lastFailedPipe = null;
+                _lastFailedHydrationUtc = DateTime.MinValue;
                 return registered;
             }
             catch
             {
+                _lastFailedPipe = pipeName;
+                _lastFailedHydrationUtc = DateTime.UtcNow;
                 return 0;
             }
         }
@@ -95,6 +143,8 @@ namespace Scio.Server
         {
             if (string.IsNullOrWhiteSpace(request.Tool))
                 return ToolResponse.Refusal(request.RequestId, "missing_tool", "Tool name is required.");
+
+            await HydrateRemoteCatalogAsync(ct).ConfigureAwait(false);
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             ToolResponse response;
@@ -138,27 +188,27 @@ namespace Scio.Server
                 return response;
             }
 
+            if (MockMode)
+            {
+                response = ToolResponse.Success(
+                    request.RequestId,
+                    new JObject
+                    {
+                        ["mock"] = true,
+                        ["tool"] = request.Tool,
+                        ["arguments"] = request.Arguments ?? new JObject()
+                    },
+                    $"[MOCK] Simulated '{request.Tool}' (no live Revit session required).",
+                    VerificationStatus.ReadOnly,
+                    hostVerified: false);
+                sw.Stop();
+                TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+                return response;
+            }
+
             string? pipeName = ResolveTargetPipe();
             if (string.IsNullOrWhiteSpace(pipeName))
             {
-                if (MockMode)
-                {
-                    response = ToolResponse.Success(
-                        request.RequestId,
-                        new JObject
-                        {
-                            ["mock"] = true,
-                            ["tool"] = request.Tool,
-                            ["arguments"] = request.Arguments ?? new JObject()
-                        },
-                        $"[MOCK] Simulated '{request.Tool}' (no live Revit session required).",
-                        VerificationStatus.ReadOnly,
-                        hostVerified: false);
-                    sw.Stop();
-                    TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
-                    return response;
-                }
-
                 response = ToolResponse.Failure(
                     request.RequestId,
                     "no_revit_session",

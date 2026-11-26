@@ -176,5 +176,113 @@ namespace Scio.Core.Tests
             }.ToString(), CancellationToken.None);
             Assert.True(facadeResp!["result"]!["isError"]!.Value<bool>());
         }
+
+        [Fact]
+        public async Task LazyHydration_RecoversAfterRevitStartsLate_AndSupportsBilingualSearch()
+        {
+            var registry = new ServerToolRegistry
+            {
+                PinnedPipeName = "scio-test-late-revit"
+            };
+
+            bool revitReady = false;
+            int fetchCount = 0;
+            registry.RemoteCatalogFetcher = (pipe, ct) =>
+            {
+                fetchCount++;
+                if (!revitReady)
+                {
+                    return Task.FromResult(ToolResponse.Failure("req", "pipe_timeout", "Revit not ready yet"));
+                }
+
+                var catalog = new JObject
+                {
+                    ["contract_hash"] = "hash-late-v4",
+                    ["tools"] = new JArray
+                    {
+                        JObject.FromObject(new ToolDescriptor
+                        {
+                            Name = "scio_create_elements",
+                            Pack = "core",
+                            ReadOnly = false,
+                            Description = "Create walls, floors, furniture instances and other Revit model elements."
+                        }),
+                        JObject.FromObject(new ToolDescriptor
+                        {
+                            Name = "scio_list_elements",
+                            Pack = "core",
+                            ReadOnly = true,
+                            Description = "List and filter Revit elements by category, level, or family."
+                        })
+                    }
+                };
+                return Task.FromResult(ToolResponse.Success("req", catalog, "ok"));
+            };
+
+            var host = new McpStdioHost(registry, schemaMode: "codemode");
+
+            // 1. Client starts before Revit is ready -> tools/list sees 0 remote tools
+            var initialList = await host.HandleJsonRpcLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}",
+                CancellationToken.None);
+            Assert.NotNull(initialList);
+            Assert.Null(registry.FindDescriptor("scio_create_elements"));
+
+            // 2. Revit finishes starting up; force next attempt (clear cooldown via new pipe name simulating new Revit PID)
+            revitReady = true;
+            registry.PinnedPipeName = "scio-test-late-revit-2";
+
+            // 3. Code Mode search in Spanish ("mobiliario") hydrates automatically and finds scio_create_elements
+            var codeResp = await host.HandleJsonRpcLineAsync(new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 2,
+                ["method"] = "tools/call",
+                ["params"] = new JObject
+                {
+                    ["name"] = "scio_code_mode",
+                    ["arguments"] = new JObject
+                    {
+                        ["code"] = "const s = scio.search('mobiliario'); const d = scio.describe('scio_list_elements'); return { found: s.tools.map(t => t.name), descName: d.name };"
+                    }
+                }
+            }.ToString(), CancellationToken.None);
+
+            Assert.False(codeResp!["result"]!["isError"]!.Value<bool>());
+            var resultObj = codeResp["result"]!["structuredContent"]!["data"]!["result"]!;
+            var foundNames = resultObj["found"]!.ToObject<string[]>()!;
+            Assert.Contains("scio_create_elements", foundNames);
+            Assert.Equal("scio_list_elements", resultObj["descName"]!.Value<string>());
+
+            // 4. Subsequent calls hit cached hydration (no redundant IPC calls)
+            int fetchesAfterHydration = fetchCount;
+            var listResp = await host.HandleJsonRpcLineAsync(new JObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = 3,
+                ["method"] = "tools/call",
+                ["params"] = new JObject
+                {
+                    ["name"] = "scio_list_tools",
+                    ["arguments"] = new JObject { ["query"] = "level" }
+                }
+            }.ToString(), CancellationToken.None);
+            Assert.False(listResp!["result"]!["isError"]!.Value<bool>());
+            Assert.Equal(fetchesAfterHydration, fetchCount);
+        }
+
+        [Fact]
+        public void ToolPackResolver_IncludesAllModulePacksByDefault()
+        {
+            var active = ToolPackResolver.ResolveActivePacks(null);
+            Assert.Contains("modeling", active);
+            Assert.Contains("interop", active);
+            Assert.Contains("cad_ifc", active);
+            Assert.Contains("iso19650", active);
+            Assert.Contains("documentation", active);
+            Assert.Contains("audit", active);
+            Assert.Contains("structure", active);
+            Assert.Contains("mep", active);
+        }
     }
 }

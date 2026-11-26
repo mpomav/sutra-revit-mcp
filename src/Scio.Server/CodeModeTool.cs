@@ -65,28 +65,29 @@ namespace Scio.Server
 },""required"":[""code""],""additionalProperties"":false}")
         };
 
-        public static Task<ToolResponse> ExecuteAsync(
+        public static async Task<ToolResponse> ExecuteAsync(
             ServerToolRegistry registry,
             ToolRequest request,
             CancellationToken ct)
         {
             try
             {
+                await registry.HydrateRemoteCatalogAsync(ct).ConfigureAwait(false);
                 JObject result = ExecuteCore(registry, request.Arguments ?? new JObject(), ct);
-                return Task.FromResult(ToolResponse.Success(
+                return ToolResponse.Success(
                     request.RequestId,
                     result,
                     $"Code Mode completed ({result["stats"]?["tool_calls"]} tool call(s)).",
                     VerificationStatus.SelfReportedVerified,
-                    hostVerified: false));
+                    hostVerified: false);
             }
             catch (ToolRefusalException tre)
             {
-                return Task.FromResult(ToolResponse.Refusal(request.RequestId, "code_mode_refused", tre.Message, details: tre.Details));
+                return ToolResponse.Refusal(request.RequestId, "code_mode_refused", tre.Message, details: tre.Details);
             }
             catch (Exception ex)
             {
-                return Task.FromResult(ToolResponse.Failure(request.RequestId, "code_mode_error", ex.Message));
+                return ToolResponse.Failure(request.RequestId, "code_mode_error", ex.Message);
             }
         }
 
@@ -128,11 +129,16 @@ namespace Scio.Server
                     callCount++;
                     string q = callArgs?.Value<string>("query") ?? string.Empty;
                     string pack = callArgs?.Value<string>("pack");
-                    var matches = registry.ListVisibleTools()
-                        .Where(t => string.IsNullOrWhiteSpace(pack) || string.Equals(t.Pack, pack, StringComparison.OrdinalIgnoreCase))
-                        .Where(t => string.IsNullOrWhiteSpace(q) ||
-                                    t.Name.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    t.Description.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0)
+                    var scoped = registry.ListVisibleTools()
+                        .Where(t => string.IsNullOrWhiteSpace(pack) || string.Equals(t.Pack, pack, StringComparison.OrdinalIgnoreCase));
+                    var filtered = string.IsNullOrWhiteSpace(q)
+                        ? scoped
+                        : (BimSearchIndex.Tokenize(q).Length > 0
+                            ? BimSearchIndex.SearchTools(scoped, q, null, limit: 50)
+                            : scoped.Where(t =>
+                                t.Name.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                t.Description.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0));
+                    var matches = filtered
                         .Select(t => new JObject { ["name"] = t.Name, ["pack"] = t.Pack, ["read_only"] = t.ReadOnly, ["description"] = t.Description });
                     var listObj = new JObject { ["tools"] = new JArray(matches) };
                     trace.Add(new JObject { ["step"] = callCount, ["tool"] = toolName, ["ok"] = true });

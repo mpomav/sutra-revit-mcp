@@ -73,13 +73,15 @@ namespace Scio.Server
                         ["additionalProperties"] = false
                     }
                 },
-                (req, ct) =>
+                async (req, ct) =>
                 {
                     var sessions = SessionRegistry.DiscoverLiveSessions();
+                    bool targetChanged = false;
                     if (req.Arguments.Value<bool?>("clear") == true)
                     {
                         _registry.PinnedPipeName = null;
                         _registry.PreferredRevitYear = null;
+                        targetChanged = true;
                     }
                     else
                     {
@@ -89,15 +91,19 @@ namespace Scio.Server
                         {
                             var byPid = sessions.FirstOrDefault(s => s.Pid == pid.Value);
                             if (byPid == null)
-                                return Task.FromResult(ToolResponse.Refusal(req.RequestId, "session_not_found", $"No live Revit v4 session with PID {pid.Value}."));
+                                return ToolResponse.Refusal(req.RequestId, "session_not_found", $"No live Revit v4 session with PID {pid.Value}.");
                             _registry.PinnedPipeName = byPid.PipeName;
+                            targetChanged = true;
                         }
                         else if (year.HasValue)
                         {
                             _registry.PreferredRevitYear = year.Value;
                             _registry.PinnedPipeName = null;
+                            targetChanged = true;
                         }
                     }
+
+                    await _registry.HydrateRemoteCatalogAsync(ct, force: targetChanged).ConfigureAwait(false);
 
                     var data = new JObject
                     {
@@ -105,7 +111,7 @@ namespace Scio.Server
                         ["preferred_year"] = _registry.PreferredRevitYear,
                         ["sessions"] = JArray.FromObject(sessions)
                     };
-                    return Task.FromResult(ToolResponse.Success(req.RequestId, data, $"Found {sessions.Count} live Revit v4 session(s)."));
+                    return ToolResponse.Success(req.RequestId, data, $"Found {sessions.Count} live Revit v4 session(s).");
                 });
 
             _registry.RegisterServerTool(
@@ -149,17 +155,25 @@ namespace Scio.Server
                         ["additionalProperties"] = false
                     }
                 },
-                (req, ct) =>
+                async (req, ct) =>
                 {
+                    await _registry.HydrateRemoteCatalogAsync(ct).ConfigureAwait(false);
+
                     string? pack = req.Arguments.Value<string>("pack");
                     string? query = req.Arguments.Value<string>("query");
 
-                    var matches = _registry.ListVisibleTools()
-                        .Where(t => string.IsNullOrWhiteSpace(pack) || string.Equals(t.Pack, pack, StringComparison.OrdinalIgnoreCase))
-                        .Where(t => string.IsNullOrWhiteSpace(query) ||
-                                    t.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    t.Description.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-                        .Select(t => new JObject
+                    var scoped = _registry.ListVisibleTools()
+                        .Where(t => string.IsNullOrWhiteSpace(pack) || string.Equals(t.Pack, pack, StringComparison.OrdinalIgnoreCase));
+
+                    var filtered = string.IsNullOrWhiteSpace(query)
+                        ? scoped
+                        : (BimSearchIndex.Tokenize(query).Length > 0
+                            ? BimSearchIndex.SearchTools(scoped, query, null, limit: 50)
+                            : scoped.Where(t =>
+                                t.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                t.Description.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0));
+
+                    var matches = filtered.Select(t => new JObject
                         {
                             ["name"] = t.Name,
                             ["pack"] = t.Pack,
@@ -167,7 +181,7 @@ namespace Scio.Server
                             ["description"] = t.Description
                         });
 
-                    return Task.FromResult(ToolResponse.Success(req.RequestId, new JArray(matches), "Listed matching tools."));
+                    return ToolResponse.Success(req.RequestId, new JArray(matches), "Listed matching tools.");
                 });
 
             _registry.RegisterServerTool(
@@ -188,13 +202,18 @@ namespace Scio.Server
                         ["additionalProperties"] = false
                     }
                 },
-                (req, ct) =>
+                async (req, ct) =>
                 {
                     string name = req.Arguments.Value<string>("tool") ?? string.Empty;
                     var desc = _registry.FindDescriptor(name);
                     if (desc == null)
-                        return Task.FromResult(ToolResponse.Refusal(req.RequestId, "unknown_tool", $"Unknown tool '{name}'."));
-                    return Task.FromResult(ToolResponse.Success(req.RequestId, JObject.FromObject(desc), $"Schema for {name}."));
+                    {
+                        await _registry.HydrateRemoteCatalogAsync(ct).ConfigureAwait(false);
+                        desc = _registry.FindDescriptor(name);
+                    }
+                    if (desc == null)
+                        return ToolResponse.Refusal(req.RequestId, "unknown_tool", $"Unknown tool '{name}'.");
+                    return ToolResponse.Success(req.RequestId, JObject.FromObject(desc), $"Schema for {name}.");
                 });
 
             _registry.RegisterServerTool(
@@ -297,7 +316,7 @@ namespace Scio.Server
                     return MakeJsonRpcResult(id, BuildResourcesList());
 
                 case "resources/read":
-                    return HandleResourceRead(id, @params);
+                    return await HandleResourceReadAsync(id, @params, ct).ConfigureAwait(false);
 
                 default:
                     return MakeJsonRpcError(id, -32601, $"Method not found: {method}");
@@ -392,7 +411,7 @@ namespace Scio.Server
             return new JObject { ["resources"] = resources };
         }
 
-        private JObject HandleResourceRead(JToken id, JObject @params)
+        private async Task<JObject> HandleResourceReadAsync(JToken id, JObject @params, CancellationToken ct)
         {
             string uri = @params.Value<string>("uri") ?? string.Empty;
             const string prefix = "scio://contract/tools/";
@@ -401,6 +420,11 @@ namespace Scio.Server
 
             string toolName = uri.Substring(prefix.Length);
             var desc = _registry.FindDescriptor(toolName);
+            if (desc == null)
+            {
+                await _registry.HydrateRemoteCatalogAsync(ct).ConfigureAwait(false);
+                desc = _registry.FindDescriptor(toolName);
+            }
             if (desc == null)
                 return MakeJsonRpcError(id, -32602, $"Tool schema not found: {toolName}");
 

@@ -18,6 +18,7 @@ namespace Scio.Abstractions
                 ["administration"] = Array.Empty<string>(),
                 ["unsafe_code"] = Array.Empty<string>(),
                 ["model"] = new[] { "read" },
+                ["modeling"] = new[] { "read" },
                 ["architecture"] = new[] { "model" },
                 ["structure"] = new[] { "model" },
                 ["mep"] = new[] { "model" },
@@ -28,8 +29,11 @@ namespace Scio.Abstractions
                 ["schedules"] = new[] { "read" },
                 ["family"] = new[] { "read" },
                 ["interoperability"] = new[] { "read" },
+                ["interop"] = new[] { "read" },
+                ["iso19650"] = new[] { "read" },
                 ["powerbi"] = new[] { "interoperability" },
                 ["cad"] = new[] { "read" },
+                ["cad_ifc"] = new[] { "read" },
                 ["legacy_recipes"] = new[] { "read" }
             };
 
