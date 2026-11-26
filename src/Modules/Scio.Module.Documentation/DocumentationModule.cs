@@ -31,6 +31,17 @@ namespace Scio.Module.Documentation
             yield return new ManageCalloutsCommand();
             yield return new ManageScopeBoxesCommand();
             yield return new RevisionCloudsCommand();
+
+            // Ola 2 — Crop, Visibility, Visual QA, Planimetry & Planners (9)
+            yield return new ViewCropCommand();
+            yield return new ViewVisibilityCommand();
+            yield return new ColorElementsCommand();
+            yield return new PlanimetryOpsCommand();
+            yield return new PlanAnnotationsCommand();
+            yield return new PlanViewsCommand();
+            yield return new QueryDimensionsCommand();
+            yield return new EditDimensionsCommand();
+            yield return new QueryDetail2DCommand();
         }
     }
 }
