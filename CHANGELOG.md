@@ -1,5 +1,17 @@
 # Changelog — Sutra (Revit MCP by SCIO DC)
 
+## v1.0.1 (2026-11-26)
+
+Patch release fixing tool discovery, missing tool packs, and Revit Ribbon UX.
+
+### Fixes & Improvements
+
+- **Lazy remote catalog hydration (`Scio.Server`):** `DispatchAsync`, `scio_code_mode`, `scio_list_tools`, `scio_describe_tool`, `scio_target`, and `resources/read` now automatically hydrate the remote Revit tool catalog whenever a live Revit session appears or changes — eliminating the stale 20-tool state when the MCP client starts before Revit.
+- **All 10 tool packs enabled (`ToolPackResolver`):** registered missing `modeling` (32+ tools), `interop` (12), `cad_ifc` (8), and `iso19650` (6) packs in `Dependencies`, unlocking all **168 visible tools** (including `scio_create_elements` and `scio_create_family`).
+- **Bilingual ES/EN search in `scio_list_tools` & `scio.search()`:** wired `BimSearchIndex` with added furniture (`mobiliario`/`furniture`), level (`nivel`/`level`), and placement (`colocar`/`place`) synonym groups.
+- **Revit Ribbon icons, branded dialogs & About window (`Scio.Revit.Ui`):** added crisp WPF vector icons (`16×16` and `32×32`) for every button, upgraded status/pause/Python dialogs to `ScioDialog` (Light/Dark Revit theme aware), and added a dedicated **Acerca de Sutra** window.
+- **Installer (`install.ps1`):** cleans legacy manifests/payloads and builds + deploys per Revit year (2023–2027).
+
 ## v1.0.0 (2026-11-24)
 
 First public **Clean-Room** release of **Sutra — Revit MCP** (`mpomav/sutra-revit-mcp`), supporting **Autodesk Revit 2023–2027** across **9 modular domains** and **130 verified tools**.
