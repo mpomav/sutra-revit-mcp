@@ -40,6 +40,9 @@ namespace Scio.Module.CoreRead
             // Template Kit & Precision Geometry (2)
             yield return new TemplateKitCommand();
             yield return new MeasureGeometryCommand();
+
+            // Ola 4 — Topological Relations (1)
+            yield return new QueryRelationsCommand();
         }
     }
 }
