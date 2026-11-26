@@ -33,6 +33,11 @@ namespace Scio.Server
                 registry.PreferredRevitYear = year;
             }
 
+            bool mockFlag = (args != null && Array.Exists(args, a => string.Equals(a, "--mock", StringComparison.OrdinalIgnoreCase)))
+                            || string.Equals(Environment.GetEnvironmentVariable("SCIO_MOCK"), "1", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(Environment.GetEnvironmentVariable("SCIO_MOCK"), "true", StringComparison.OrdinalIgnoreCase);
+            registry.MockMode = mockFlag;
+
             var host = new McpStdioHost(registry);
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };

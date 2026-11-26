@@ -93,6 +93,51 @@ namespace Scio.Server
                 readOnly: true,
                 openWorld: false,
                 executor: (args, ct) => DistillTool.Handle(args, ct));
+
+            Register(
+                registry,
+                name: "scio_submit_job",
+                pack: "core",
+                description: "Submit a long-running tool call asynchronously and receive a job_id to poll with scio_job_status.",
+                readOnly: false,
+                openWorld: false,
+                executor: (args, ct) => registry.Jobs.Submit(registry, args));
+
+            Register(
+                registry,
+                name: "scio_job_status",
+                pack: "core",
+                description: "Poll status/result of an asynchronous job submitted via scio_submit_job (or list recent jobs).",
+                readOnly: true,
+                openWorld: false,
+                executor: (args, ct) => registry.Jobs.Status(args));
+
+            Register(
+                registry,
+                name: "scio_run_procedure",
+                pack: "local",
+                description: "Stateful guided BIM procedure runner (start, advance, decide, record, reconcile, status, abandon) with built-in QA playbooks.",
+                readOnly: false,
+                openWorld: false,
+                executor: (args, ct) => ProcedureRunnerTool.Handle(args, ct));
+
+            Register(
+                registry,
+                name: "scio_audit_access",
+                pack: "core",
+                description: "Inspect active permission profile, tool packs, schema mode, mock mode, Python authorization, and telemetry state.",
+                readOnly: true,
+                openWorld: false,
+                executor: (args, ct) => AuditAccessTool.HandleAuditAccess(registry));
+
+            Register(
+                registry,
+                name: "scio_request_python_access",
+                pack: "core",
+                description: "Check Python execution authorization status or log an owner-approval request (never self-approves).",
+                readOnly: false,
+                openWorld: false,
+                executor: (args, ct) => AuditAccessTool.HandleRequestPythonAccess(args, ct));
         }
 
         private static void Register(

@@ -41,8 +41,9 @@ namespace Scio.Module.CoreRead
             yield return new TemplateKitCommand();
             yield return new MeasureGeometryCommand();
 
-            // Ola 4 — Topological Relations (1)
+            // Ola 4 & 5 — Topological Relations & Live API Help (2)
             yield return new QueryRelationsCommand();
+            yield return new ApiHelpCommand();
         }
     }
 }

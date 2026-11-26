@@ -23,7 +23,9 @@ namespace Scio.Server
         public PermissionProfile PermissionProfile { get; set; } = PermissionProfile.SafeWrite;
         public HashSet<string> ActivePacks { get; set; } = ToolPackResolver.ResolveActivePacks(null);
         public string SchemaMode { get; set; } = "codemode";
+        public bool MockMode { get; set; }
         public SessionTraceRecorder TraceRecorder { get; } = new SessionTraceRecorder();
+        public AsyncJobManager Jobs { get; } = new AsyncJobManager();
 
         public async Task<int> HydrateRemoteCatalogAsync(CancellationToken ct, bool force = false)
         {
@@ -139,6 +141,24 @@ namespace Scio.Server
             string? pipeName = ResolveTargetPipe();
             if (string.IsNullOrWhiteSpace(pipeName))
             {
+                if (MockMode)
+                {
+                    response = ToolResponse.Success(
+                        request.RequestId,
+                        new JObject
+                        {
+                            ["mock"] = true,
+                            ["tool"] = request.Tool,
+                            ["arguments"] = request.Arguments ?? new JObject()
+                        },
+                        $"[MOCK] Simulated '{request.Tool}' (no live Revit session required).",
+                        VerificationStatus.ReadOnly,
+                        hostVerified: false);
+                    sw.Stop();
+                    TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+                    return response;
+                }
+
                 response = ToolResponse.Failure(
                     request.RequestId,
                     "no_revit_session",

@@ -22,10 +22,13 @@ namespace Scio.Module.IsoInterop
             yield return new CheckIsoNamingCommand();
             yield return new DeliverPackageCommand();
 
-            // Ola 4 — Budget BC3, 4D Schedule Linking & Classification Table (3)
+            // Ola 4 & 5 — Budget BC3, 4D Schedule, Classification, Corrections & Cloud CDE (6)
             yield return new BudgetCompareCommand();
             yield return new LinkScheduleCommand();
             yield return new ManageClassificationTableCommand();
+            yield return new ApplyCorrectionsCommand();
+            yield return new CdeCloudCommand();
+            yield return new AccUploadStatusCommand();
         }
     }
 }
