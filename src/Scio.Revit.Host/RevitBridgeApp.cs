@@ -271,6 +271,25 @@ namespace Scio.Revit.Host
             };
             ScioRibbon.Build(application);
 
+            // First-run welcome dialog for strictly opt-in anonymous telemetry.
+            // Deferred to ApplicationInitialized so Revit's main window is ready
+            // and never blocks startup.
+            int welcomeShown = 0;
+            application.ControlledApplication.ApplicationInitialized += (sender, args) =>
+            {
+                if (Interlocked.Exchange(ref welcomeShown, 1) != 0) return;
+                try
+                {
+                    if (!TelemetryPreferences.HasAnsweredWelcomePrompt())
+                    {
+                        IntPtr owner = IntPtr.Zero;
+                        try { owner = Process.GetCurrentProcess().MainWindowHandle; } catch { }
+                        WelcomeTelemetryDialog.ShowIfFirstRun(owner, CurrentVersion);
+                    }
+                }
+                catch { /* never fail Revit startup */ }
+            };
+
             return Result.Succeeded;
         }
 

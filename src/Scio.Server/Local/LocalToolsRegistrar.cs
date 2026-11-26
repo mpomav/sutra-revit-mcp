@@ -62,7 +62,7 @@ namespace Scio.Server
                 registry,
                 name: "scio_telemetry",
                 pack: "local",
-                description: "Strictly opt-in anonymous usage telemetry (OFF by default) plus local usage insights: status, preview, insights, flush (refused when OFF), or clear.",
+                description: "Strictly opt-in anonymous usage telemetry (OFF by default) with automatic periodic/shutdown sending plus local usage insights: status, preview, insights, auto_flush, flush (refused when OFF), or clear.",
                 readOnly: false,
                 openWorld: true,
                 executor: (args, ct) => TelemetryTool.Handle(args, ct));

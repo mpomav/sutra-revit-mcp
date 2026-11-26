@@ -87,6 +87,17 @@ namespace Scio.Revit.Ui
                 };
                 SetVectorIcon(pyBtn, RibbonIconKind.Python);
                 pulldown.AddPushButton(pyBtn);
+
+                var telBtn = new PushButtonData(
+                    "ScioToggleTelemetry",
+                    "Telemetría anónima (ON / OFF)",
+                    asmPath,
+                    typeof(ToggleTelemetryCommand).FullName)
+                {
+                    ToolTip = "Activa o desactiva el envío automático de telemetría anónima de uso (sin datos de modelos)."
+                };
+                SetVectorIcon(telBtn, RibbonIconKind.Settings);
+                pulldown.AddPushButton(telBtn);
             }
 
             panel.AddSeparator();
@@ -198,6 +209,26 @@ namespace Scio.Revit.Ui
                 enabled
                     ? "scio_execute_python está habilitado para esta sesión de Revit. Puedes revocarlo en cualquier momento desde Opciones avanzadas."
                     : "Solo las herramientas tipadas están habilitadas. La ejecución arbitraria de Python queda bloqueada.",
+                isError: false);
+            return Result.Succeeded;
+        }
+    }
+
+    [Transaction(TransactionMode.ReadOnly)]
+    public sealed class ToggleTelemetryCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            bool next = !TelemetryPreferences.IsOptedIn();
+            TelemetryPreferences.SaveChoice(next, markPromptShown: true);
+            IntPtr owner = commandData?.Application?.MainWindowHandle ?? IntPtr.Zero;
+            ScioDialog.ShowMessage(
+                owner,
+                "Telemetría anónima de uso",
+                next ? "Telemetría anónima ACTIVADA" : "Telemetría anónima DESACTIVADA",
+                next
+                    ? "Gracias por ayudar a mejorar Sutra. Se enviarán automáticamente métricas agregadas y anónimas de uso (nunca nombres de proyecto, rutas ni contenido del modelo)."
+                    : "La telemetría quedó desactivada. No se registrará ni enviará ningún dato de uso.",
                 isError: false);
             return Result.Succeeded;
         }

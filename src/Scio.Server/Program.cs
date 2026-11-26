@@ -42,7 +42,18 @@ namespace Scio.Server
             using var cts = new CancellationTokenSource();
             Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-            await host.RunAsync(Console.In, Console.Out, cts.Token).ConfigureAwait(false);
+            using var telemetryCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            _ = TelemetryTool.StartAutoFlushLoop(telemetryCts.Token);
+
+            try
+            {
+                await host.RunAsync(Console.In, Console.Out, cts.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                telemetryCts.Cancel();
+                await TelemetryTool.FlushOnShutdownAsync().ConfigureAwait(false);
+            }
             return 0;
         }
 
