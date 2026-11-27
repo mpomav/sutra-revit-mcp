@@ -7,10 +7,10 @@
 #define AppPublisher   "SCIO DC"
 #define AppUrl         "https://github.com/mpomav/sutra-revit-mcp"
 #ifndef AppVersion
-  #define AppVersion "1.1.0"
+  #define AppVersion "1.2.0"
 #endif
 #ifndef StageDir
-  #define StageDir "..\dist\sutra-1.1.0"
+  #define StageDir "..\dist\sutra-1.2.0"
 #endif
 
 [Setup]
@@ -32,8 +32,12 @@ OutputBaseFilename=sutra-revit-mcp-{#AppVersion}-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=assets\sutra-setup.ico
+WizardImageFile=assets\wizard-banner.bmp
+WizardSmallImageFile=assets\wizard-small.bmp
 PrivilegesRequired=lowest
 UninstallDisplayName={#AppName} {#AppVersion}
+UninstallDisplayIcon={app}\server\scio-revit-mcp.exe
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
@@ -46,16 +50,31 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 [CustomMessages]
 es.RevitRunning=Autodesk Revit está abierto. Cierra todas las ventanas de Revit antes de continuar con la instalación o actualización de Sutra.
 en.RevitRunning=Autodesk Revit is currently running. Close all Revit windows before continuing Sutra installation or upgrade.
-es.FinishedInstall=Sutra — Revit MCP v%1 se instaló correctamente.%n%nRuta del servidor MCP:%n%2%n%nVersiones de Revit actualizadas: %3%n%nAbre Autodesk Revit y acepta "Cargar siempre" (Always Load) si aparece el aviso de seguridad.
-en.FinishedInstall=Sutra — Revit MCP v%1 was installed successfully.%n%nMCP Server path:%n%2%n%nUpdated Revit versions: %3%n%nOpen Autodesk Revit and choose "Always Load" if prompted by the security dialog.
-es.FinishedUpgrade=Sutra — Revit MCP se actualizó correctamente (%1 -> v%2).%n%nRuta del servidor MCP:%n%3%n%nVersiones de Revit actualizadas: %4%n%nAbre Autodesk Revit para cargar la nueva versión.
-en.FinishedUpgrade=Sutra — Revit MCP was upgraded successfully (%1 -> v%2).%n%nMCP Server path:%n%3%n%nUpdated Revit versions: %4%n%nOpen Autodesk Revit to load the new version.
-es.NoRevitFound=ninguna detectada en C:\Program Files\Autodesk\Revit 2023–2027 (solo se instaló el servidor MCP)
-en.NoRevitFound=none detected under C:\Program Files\Autodesk\Revit 2023–2027 (MCP server installed only)
+es.CadRunning=AutoCAD / Civil 3D está abierto. Cierra todas las ventanas de AutoCAD / Civil 3D antes de continuar con la instalación o actualización de Sutra.
+en.CadRunning=AutoCAD / Civil 3D is currently running. Close all AutoCAD / Civil 3D windows before continuing Sutra installation or upgrade.
+es.FinishedInstall=Sutra MCP v%1 se instaló correctamente.%n%nRuta del servidor MCP:%n%2%n%nRevit actualizado: %3%nAutoCAD / Civil 3D actualizado: %4%nClientes MCP configurados: %5%n%nReinicia tu cliente de IA y abre Revit, AutoCAD o Civil 3D (acepta "Cargar siempre" si aparece el aviso).
+en.FinishedInstall=Sutra MCP v%1 was installed successfully.%n%nMCP Server path:%n%2%n%nUpdated Revit versions: %3%nUpdated AutoCAD / Civil 3D versions: %4%nConfigured MCP clients: %5%n%nRestart your AI client and open Revit, AutoCAD, or Civil 3D (choose "Always Load" if prompted).
+es.FinishedUpgrade=Sutra MCP se actualizó correctamente (%1 -> v%2).%n%nRuta del servidor MCP:%n%3%n%nRevit actualizado: %4%nAutoCAD / Civil 3D actualizado: %5%nClientes MCP actualizados: %6%n%nReinicia tu cliente de IA y abre Revit, AutoCAD o Civil 3D para cargar la nueva versión.
+en.FinishedUpgrade=Sutra MCP was upgraded successfully (%1 -> v%2).%n%nMCP Server path:%n%3%n%nUpdated Revit versions: %4%nUpdated AutoCAD / Civil 3D versions: %5%nUpdated MCP clients: %6%n%nRestart your AI client and open Revit, AutoCAD, or Civil 3D to load the new version.
+es.NoRevitFound=ninguna detectada (2023–2027)
+en.NoRevitFound=none detected (2023–2027)
+es.NoCadFound=ninguna detectada (2023–2026)
+en.NoCadFound=none detected (2023–2026)
+es.NoMcpConfigured=ninguno seleccionado (puedes ejecutar scripts\configure-mcp-clients.ps1 después)
+en.NoMcpConfigured=none selected (you can run scripts\configure-mcp-clients.ps1 later)
+es.McpPageTitle=Configurar clientes de IA (MCP)
+en.McpPageTitle=Configure AI Clients (MCP)
+es.McpPageSubtitle=Selecciona los clientes de IA donde Sutra registrará o actualizará el servidor MCP.
+en.McpPageSubtitle=Select the AI clients where Sutra should register or update the MCP server.
+es.McpPageDesc=Solo se agrega o actualiza la entrada "scio-revit" (tus otros servidores MCP se conservan intactos y se crea una copia .bak). Los clientes detectados en este equipo aparecen preseleccionados:
+en.McpPageDesc=Only the "scio-revit" entry is added or updated (your other MCP servers remain untouched and a .bak backup is created). Clients detected on this machine are pre-selected:
 
 [Files]
 ; Self-contained MCP server (win-x64)
 Source: "{#StageDir}\server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; Helper scripts (MCP client auto-configurator)
+Source: "{#StageDir}\scripts\configure-mcp-clients.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; Docs & legal notices
 Source: "{#StageDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -72,6 +91,12 @@ Source: "{#StageDir}\addins\2025\*"; DestDir: "{tmp}\SutraAddins\2025"; Flags: i
 Source: "{#StageDir}\addins\2026\*"; DestDir: "{tmp}\SutraAddins\2026"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist deleteafterinstall
 Source: "{#StageDir}\addins\2027\*"; DestDir: "{tmp}\SutraAddins\2027"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist deleteafterinstall
 
+; Per-year AutoCAD / Civil 3D add-in payloads (Scio.Cad.dll) staged in {tmp} and deployed as SutraCad.bundle
+Source: "{#StageDir}\cad-addins\2023\*"; DestDir: "{tmp}\SutraCadAddins\2023"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist deleteafterinstall
+Source: "{#StageDir}\cad-addins\2024\*"; DestDir: "{tmp}\SutraCadAddins\2024"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist deleteafterinstall
+Source: "{#StageDir}\cad-addins\2025\*"; DestDir: "{tmp}\SutraCadAddins\2025"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist deleteafterinstall
+Source: "{#StageDir}\cad-addins\2026\*"; DestDir: "{tmp}\SutraCadAddins\2026"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist deleteafterinstall
+
 [InstallDelete]
 ; Clean previous server and legacy staging directories to guarantee a clean in-place upgrade
 Type: filesandordirs; Name: "{app}\server"
@@ -84,7 +109,11 @@ Type: files; Name: "{app}\manifest.previous.json"
 [Code]
 var
   InstalledYearsList: string;
+  InstalledCadYearsList: string;
+  ConfiguredMcpList: string;
   PreviousVersion: string;
+  McpClientsPage: TInputOptionWizardPage;
+  McpClientKeys: array[0..7] of string;
 
 function IsProcessRunning(const ImageName: string): Boolean;
 var
@@ -134,6 +163,14 @@ begin
   while IsProcessRunning('Revit.exe') do
   begin
     if MsgBox(CustomMessage('RevitRunning'), mbError, MB_RETRYCANCEL) = IDCANCEL then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+  while IsProcessRunning('acad.exe') do
+  begin
+    if MsgBox(CustomMessage('CadRunning'), mbError, MB_RETRYCANCEL) = IDCANCEL then
     begin
       Result := False;
       Exit;
@@ -220,6 +257,163 @@ begin
   InstalledYearsList := InstalledYearsList + YearStr;
 end;
 
+procedure DeployCadBundle;
+var
+  CadYears: array[0..3] of string;
+  SeriesIds: array[0..3] of string;
+  I: Integer;
+  YearStr, CadApiPath, SrcDll, BundleDir, DestDir, DestDll, ComponentsXml, PkgXml: string;
+begin
+  InstalledCadYearsList := '';
+  CadYears[0] := '2023'; SeriesIds[0] := 'R24.2';
+  CadYears[1] := '2024'; SeriesIds[1] := 'R24.3';
+  CadYears[2] := '2025'; SeriesIds[2] := 'R25.0';
+  CadYears[3] := '2026'; SeriesIds[3] := 'R25.1';
+
+  BundleDir := ExpandConstant('{userappdata}\Autodesk\ApplicationPlugins\SutraCad.bundle');
+  ComponentsXml := '';
+
+  for I := 0 to 3 do
+  begin
+    YearStr := CadYears[I];
+    CadApiPath := 'C:\Program Files\Autodesk\AutoCAD ' + YearStr + '\acdbmgd.dll';
+    SrcDll := ExpandConstant('{tmp}\SutraCadAddins\') + YearStr + '\Scio.Cad.dll';
+    if FileExists(CadApiPath) and FileExists(SrcDll) then
+    begin
+      DestDir := AddBackslash(BundleDir) + 'Contents\' + YearStr;
+      if DirExists(DestDir) then DelTree(DestDir, True, True, True);
+      ForceDirectories(DestDir);
+      DestDll := AddBackslash(DestDir) + 'Scio.Cad.dll';
+      FileCopy(SrcDll, DestDll, False);
+
+      ComponentsXml := ComponentsXml +
+        '  <Components Description="Sutra CAD ' + YearStr + ' (AutoCAD &amp; Civil 3D)">' + #13#10 +
+        '    <RuntimeRequirements OS="Win64" Platform="AutoCAD|AutoCAD*|Civil3D" SeriesMin="' + SeriesIds[I] + '" SeriesMax="' + SeriesIds[I] + '" />' + #13#10 +
+        '    <ComponentEntry AppName="SutraCad" Version="{#AppVersion}" ModuleName="./Contents/' + YearStr + '/Scio.Cad.dll" LoadOnAutoCADStartup="True" />' + #13#10 +
+        '  </Components>' + #13#10;
+
+      if InstalledCadYearsList <> '' then
+        InstalledCadYearsList := InstalledCadYearsList + ', ';
+      InstalledCadYearsList := InstalledCadYearsList + YearStr;
+    end;
+  end;
+
+  if ComponentsXml <> '' then
+  begin
+    PkgXml :=
+      '<?xml version="1.0" encoding="utf-8"?>' + #13#10 +
+      '<ApplicationPackage SchemaVersion="1.0"' + #13#10 +
+      '                    AutodeskProduct="AutoCAD"' + #13#10 +
+      '                    Name="Sutra — AutoCAD &amp; Civil 3D MCP"' + #13#10 +
+      '                    Description="Transactional, local-first MCP bridge for AutoCAD and Civil 3D integrated with Sutra."' + #13#10 +
+      '                    AppVersion="{#AppVersion}"' + #13#10 +
+      '                    Author="Marco Poma - SCIO DC"' + #13#10 +
+      '                    ProductCode="{9F4C2B71-3E48-4C7A-A1F2-5D9E8A31C001}"' + #13#10 +
+      '                    UpgradeCode="{9F4C2B71-3E48-4C7A-A1F2-5D9E8A31C002}">' + #13#10 +
+      '  <CompanyDetails Name="SCIO DC (Grupo POVA)" Url="https://sciodc.com" />' + #13#10 +
+      ComponentsXml +
+      '</ApplicationPackage>' + #13#10;
+
+    SaveStringToFile(AddBackslash(BundleDir) + 'PackageContents.xml', PkgXml, False);
+  end;
+end;
+
+function HasClaudeMsixFolder(): Boolean;
+var
+  FindRec: TFindRec;
+begin
+  Result := False;
+  if FindFirst(ExpandConstant('{localappdata}\Packages\Claude_*'), FindRec) then
+  begin
+    try
+      Result := True;
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
+procedure InitializeWizard;
+begin
+  McpClientsPage := CreateInputOptionPage(
+    wpWelcome,
+    CustomMessage('McpPageTitle'),
+    CustomMessage('McpPageSubtitle'),
+    CustomMessage('McpPageDesc'),
+    False,
+    False);
+
+  McpClientKeys[0] := 'claude-desktop';
+  McpClientKeys[1] := 'claude-code';
+  McpClientKeys[2] := 'antigravity';
+  McpClientKeys[3] := 'gemini-cli';
+  McpClientKeys[4] := 'cursor';
+  McpClientKeys[5] := 'windsurf';
+  McpClientKeys[6] := 'vscode';
+  McpClientKeys[7] := 'codex';
+
+  McpClientsPage.Add('Claude Desktop (AppData / Microsoft Store)');
+  McpClientsPage.Add('Claude Code (~/.claude.json)');
+  McpClientsPage.Add('Antigravity (~/.gemini/antigravity/mcp_config.json)');
+  McpClientsPage.Add('Gemini CLI (~/.gemini/settings.json)');
+  McpClientsPage.Add('Cursor (~/.cursor/mcp.json)');
+  McpClientsPage.Add('Windsurf (~/.codeium/windsurf/mcp_config.json)');
+  McpClientsPage.Add('VS Code (AppData/Code/User/mcp.json)');
+  McpClientsPage.Add('Codex CLI (~/.codex/config.toml)');
+
+  McpClientsPage.Values[0] := DirExists(ExpandConstant('{userappdata}\Claude')) or HasClaudeMsixFolder();
+  McpClientsPage.Values[1] := FileExists(ExpandConstant('{%USERPROFILE}\.claude.json')) or DirExists(ExpandConstant('{%USERPROFILE}\.claude'));
+  McpClientsPage.Values[2] := DirExists(ExpandConstant('{%USERPROFILE}\.gemini\antigravity'));
+  McpClientsPage.Values[3] := DirExists(ExpandConstant('{%USERPROFILE}\.gemini'));
+  McpClientsPage.Values[4] := DirExists(ExpandConstant('{%USERPROFILE}\.cursor'));
+  McpClientsPage.Values[5] := DirExists(ExpandConstant('{%USERPROFILE}\.codeium\windsurf'));
+  McpClientsPage.Values[6] := DirExists(ExpandConstant('{userappdata}\Code\User'));
+  McpClientsPage.Values[7] := DirExists(ExpandConstant('{%USERPROFILE}\.codex'));
+end;
+
+procedure ConfigureSelectedMcpClients;
+var
+  I, ResultCode: Integer;
+  SelectedCsv, ScriptPath, ServerExe, SummaryPath, Params: string;
+  SummaryBytes: AnsiString;
+begin
+  ConfiguredMcpList := '';
+  ScriptPath := ExpandConstant('{app}\scripts\configure-mcp-clients.ps1');
+  if not FileExists(ScriptPath) then
+    Exit;
+
+  ServerExe := ExpandConstant('{app}\server\scio-revit-mcp.exe');
+  SummaryPath := ExpandConstant('{tmp}\sutra-mcp-configured.txt');
+  if FileExists(SummaryPath) then DeleteFile(SummaryPath);
+
+  SelectedCsv := '';
+  for I := 0 to 7 do
+  begin
+    if McpClientsPage.Values[I] then
+    begin
+      if SelectedCsv <> '' then SelectedCsv := SelectedCsv + ',';
+      SelectedCsv := SelectedCsv + McpClientKeys[I];
+    end;
+  end;
+
+  if SelectedCsv = '' then
+  begin
+    if WizardSilent then
+      Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -ServerExe "' + ServerExe + '" -AutoDetect -SummaryFile "' + SummaryPath + '"'
+    else
+      Exit;
+  end
+  else
+  begin
+    Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -ServerExe "' + ServerExe + '" -Clients "' + SelectedCsv + '" -SummaryFile "' + SummaryPath + '"';
+  end;
+
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  if FileExists(SummaryPath) and LoadStringFromFile(SummaryPath, SummaryBytes) then
+    ConfiguredMcpList := Trim(string(SummaryBytes));
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Years: array[0..4] of string;
@@ -236,13 +430,16 @@ begin
     for I := 0 to 4 do
       DeployRevitYear(Years[I]);
 
+    DeployCadBundle;
+    ConfigureSelectedMcpClients;
+
     SaveStringToFile(ExpandConstant('{app}\version.txt'), '{#AppVersion}' + #13#10, False);
   end;
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
 var
-  ServerExe, YearsDisplay: string;
+  ServerExe, YearsDisplay, CadYearsDisplay, McpDisplay: string;
 begin
   if CurPageID = wpFinished then
   begin
@@ -252,12 +449,22 @@ begin
     else
       YearsDisplay := InstalledYearsList;
 
+    if InstalledCadYearsList = '' then
+      CadYearsDisplay := CustomMessage('NoCadFound')
+    else
+      CadYearsDisplay := InstalledCadYearsList;
+
+    if ConfiguredMcpList = '' then
+      McpDisplay := CustomMessage('NoMcpConfigured')
+    else
+      McpDisplay := ConfiguredMcpList;
+
     if PreviousVersion <> '' then
       WizardForm.FinishedLabel.Caption :=
-        FmtMessage(CustomMessage('FinishedUpgrade'), [PreviousVersion, '{#AppVersion}', ServerExe, YearsDisplay])
+        FmtMessage(CustomMessage('FinishedUpgrade'), [PreviousVersion, '{#AppVersion}', ServerExe, YearsDisplay, CadYearsDisplay, McpDisplay])
     else
       WizardForm.FinishedLabel.Caption :=
-        FmtMessage(CustomMessage('FinishedInstall'), ['{#AppVersion}', ServerExe, YearsDisplay]);
+        FmtMessage(CustomMessage('FinishedInstall'), ['{#AppVersion}', ServerExe, YearsDisplay, CadYearsDisplay, McpDisplay]);
   end;
 end;
 
@@ -265,7 +472,7 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Years: array[0..4] of string;
   I: Integer;
-  AddinRoot, PayloadDir, ManifestPath: string;
+  AddinRoot, PayloadDir, ManifestPath, CadBundleDir: string;
 begin
   if CurUninstallStep = usUninstall then
   begin
@@ -283,5 +490,7 @@ begin
       PayloadDir := AddBackslash(AddinRoot) + 'Scio';
       if DirExists(PayloadDir) then DelTree(PayloadDir, True, True, True);
     end;
+    CadBundleDir := ExpandConstant('{userappdata}\Autodesk\ApplicationPlugins\SutraCad.bundle');
+    if DirExists(CadBundleDir) then DelTree(CadBundleDir, True, True, True);
   end;
 end;

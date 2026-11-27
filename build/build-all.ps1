@@ -15,6 +15,7 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $RevitProjects = @(
     "src/Scio.Revit.Host/Scio.Revit.Host.csproj",
     "src/Scio.Revit.Python/Scio.Revit.Python.csproj",
+    "src/Scio.Revit.CSharp/Scio.Revit.CSharp.csproj",
     "src/Scio.Revit.Ui/Scio.Revit.Ui.csproj",
     "src/Modules/Scio.Module.CoreRead/Scio.Module.CoreRead.csproj",
     "src/Modules/Scio.Module.ScioNative/Scio.Module.ScioNative.csproj",

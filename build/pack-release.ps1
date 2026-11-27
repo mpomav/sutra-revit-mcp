@@ -6,6 +6,7 @@
 [CmdletBinding()]
 param(
     [int[]]$Years = @(2023, 2024, 2025, 2026, 2027),
+    [int[]]$CadYears = @(2023, 2024, 2025, 2026),
     [string]$Configuration = "Release",
     [switch]$SkipTests
 )
@@ -23,10 +24,12 @@ $DistDir = Join-Path $RepoRoot "dist"
 $StageDir = Join-Path $DistDir "sutra-$Version"
 $ServerStage = Join-Path $StageDir "server"
 $AddinsStage = Join-Path $StageDir "addins"
+$CadAddinsStage = Join-Path $StageDir "cad-addins"
 
 $RevitProjects = @(
     "src/Scio.Revit.Host/Scio.Revit.Host.csproj",
     "src/Scio.Revit.Python/Scio.Revit.Python.csproj",
+    "src/Scio.Revit.CSharp/Scio.Revit.CSharp.csproj",
     "src/Scio.Revit.Ui/Scio.Revit.Ui.csproj",
     "src/Modules/Scio.Module.CoreRead/Scio.Module.CoreRead.csproj",
     "src/Modules/Scio.Module.ScioNative/Scio.Module.ScioNative.csproj",
@@ -50,7 +53,7 @@ try {
     }
 
     if (Test-Path $StageDir) { Remove-Item -Path $StageDir -Recurse -Force }
-    New-Item -ItemType Directory -Force -Path $ServerStage, $AddinsStage | Out-Null
+    New-Item -ItemType Directory -Force -Path $ServerStage, $AddinsStage, $CadAddinsStage | Out-Null
 
     Write-Host "=== Publishing self-contained Scio.Server (win-x64) ===" -ForegroundColor Cyan
     dotnet publish src/Scio.Server/Scio.Server.csproj -c $Configuration -r win-x64 --self-contained true `
@@ -69,8 +72,11 @@ try {
         $yearOut = Join-Path $AddinsStage "$yr"
         New-Item -ItemType Directory -Force -Path $yearOut | Out-Null
 
+        dotnet restore src/Scio.Revit.Sdk/Scio.Revit.Sdk.csproj -p:RevitYear=$yr --nologo -v quiet
+        if ($LASTEXITCODE -ne 0) { throw "Scio.Revit.Sdk restore failed for Revit $yr." }
+
         foreach ($proj in $RevitProjects) {
-            dotnet build $proj -p:RevitYear=$yr -c $Configuration --nologo -v quiet
+            dotnet build $proj -p:RevitYear=$yr -c $Configuration --disable-build-servers --nologo -v quiet
             if ($LASTEXITCODE -ne 0) { throw "$proj build failed for Revit $yr." }
             $projDir = Split-Path -Parent $proj
             Copy-Item -Path (Join-Path $RepoRoot "$projDir\bin\$Configuration\$tfm\*") -Destination $yearOut -Recurse -Force
@@ -80,12 +86,48 @@ try {
     }
 
     if ($BuiltYears.Count -eq 0) {
-        throw "No Revit installations (2023-2027) found to package."
+        Write-Host "  Warning: No Revit installations (2023-2027) found to package." -ForegroundColor Yellow
+    }
+
+    $BuiltCadYears = @()
+    $CadProj = Join-Path $RepoRoot "src\Scio.Cad\Scio.Cad.csproj"
+    if (Test-Path $CadProj) {
+        foreach ($cyr in $CadYears) {
+            $cadDir = "C:\Program Files\Autodesk\AutoCAD $cyr"
+            $cadDll = Join-Path $cadDir "acdbmgd.dll"
+            if (-not (Test-Path $cadDll)) {
+                Write-Host "  Skipping AutoCAD / Civil 3D $cyr (not installed)." -ForegroundColor Yellow
+                continue
+            }
+            Write-Host "=== Building & staging AutoCAD / Civil 3D $cyr (Scio.Cad) ===" -ForegroundColor Cyan
+            dotnet build $CadProj -c $Configuration -p:CadYear=$cyr "-p:CadDir=$cadDir" --disable-build-servers --nologo -v quiet
+            if ($LASTEXITCODE -ne 0) { throw "Scio.Cad build failed for AutoCAD / Civil 3D $cyr." }
+
+            $cadBuiltDll = Join-Path $RepoRoot "src\Scio.Cad\bin\$Configuration\Scio.Cad.dll"
+            if (-not (Test-Path $cadBuiltDll)) { throw "Expected Scio.Cad.dll missing at $cadBuiltDll" }
+
+            $cadYearOut = Join-Path $CadAddinsStage "$cyr"
+            New-Item -ItemType Directory -Force -Path $cadYearOut | Out-Null
+            Copy-Item -Path $cadBuiltDll -Destination (Join-Path $cadYearOut "Scio.Cad.dll") -Force
+            $BuiltCadYears += $cyr
+            Write-Host "  Staged AutoCAD / Civil 3D $cyr -> $cadYearOut" -ForegroundColor Green
+        }
+    }
+
+    if ($BuiltYears.Count -eq 0 -and $BuiltCadYears.Count -eq 0) {
+        throw "No Revit (2023-2027) or AutoCAD / Civil 3D (2023-2026) installations found to package."
     }
 
     foreach ($doc in @("README.md", "README.es.md", "CHANGELOG.md", "LICENSE", "PROVENANCE.md", "THIRD-PARTY-NOTICES.md", "install.ps1")) {
         $src = Join-Path $RepoRoot $doc
         if (Test-Path $src) { Copy-Item -Path $src -Destination $StageDir -Force }
+    }
+
+    $ScriptsStage = Join-Path $StageDir "scripts"
+    New-Item -ItemType Directory -Force -Path $ScriptsStage | Out-Null
+    $McpCfgScript = Join-Path $RepoRoot "scripts\configure-mcp-clients.ps1"
+    if (Test-Path $McpCfgScript) {
+        Copy-Item -Path $McpCfgScript -Destination (Join-Path $ScriptsStage "configure-mcp-clients.ps1") -Force
     }
 
     $ZipPath = Join-Path $DistDir "sutra-revit-mcp-$Version-win-x64.zip"
@@ -125,7 +167,8 @@ try {
     Write-Host "  Setup : $SetupPath ($([Math]::Round((Get-Item $SetupPath).Length / 1MB, 2)) MB)" -ForegroundColor Cyan
     Write-Host "  Zip   : $ZipPath ($([Math]::Round((Get-Item $ZipPath).Length / 1MB, 2)) MB)" -ForegroundColor Cyan
     Write-Host "  Sums  : $SumPath" -ForegroundColor Cyan
-    Write-Host "  Years : $($BuiltYears -join ', ')" -ForegroundColor Cyan
+    Write-Host "  Revit : $(if ($BuiltYears.Count -gt 0) { $BuiltYears -join ', ' } else { 'none' })" -ForegroundColor Cyan
+    Write-Host "  CAD   : $(if ($BuiltCadYears.Count -gt 0) { $BuiltCadYears -join ', ' } else { 'none' })" -ForegroundColor Cyan
 }
 finally {
     Pop-Location
