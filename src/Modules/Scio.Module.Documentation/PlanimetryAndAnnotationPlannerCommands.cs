@@ -277,11 +277,35 @@ namespace Scio.Module.Documentation
         }
     }
 
-    [ScioTool("scio_plan_views", "documentation", "Read-only deliverable view planner: room_views, unplaced_views, and deliverable_set readiness.", ReadOnly = true)]
+    [ScioTool("scio_plan_views", "documentation", "Read-only deliverable view planner: room_views, element_views (isometric_by_host, beam_sections, grid_elevations_sheets), unplaced_views, and deliverable_set readiness.", ReadOnly = true)]
     public sealed class PlanViewsCommand : IRevitCommand
     {
-        [ScioParam("operation", "Planning mode.", Required = true, EnumValues = new[] { "room_views", "unplaced_views", "deliverable_set" })]
+        [ScioParam("operation", "Planning mode.", Required = true, EnumValues = new[] { "room_views", "element_views", "unplaced_views", "deliverable_set" })]
         public string Operation { get; set; } = "deliverable_set";
+
+        [ScioParam("preset", "Preset for operation=element_views.", EnumValues = new[] { "isometric_by_host", "beam_sections", "grid_elevations_sheets" })]
+        public string Preset { get; set; } = "isometric_by_host";
+
+        [ScioParam("element_ids", "Optional target ElementIds for operation=element_views (auto-selects Floors / Structural Framing / Grids when omitted).")]
+        public List<long>? ElementIds { get; set; }
+
+        [ScioParam("level_name", "Optional Level name filter for operation=element_views.")]
+        public string? LevelName { get; set; }
+
+        [ScioParam("padding_mm", "Section box / crop padding margin in mm for operation=element_views (default 150).")]
+        public double PaddingMm { get; set; } = 150.0;
+
+        [ScioParam("transverse_count", "Number of transverse sections per beam for preset=beam_sections (1..5, default 1).")]
+        public int TransverseCount { get; set; } = 1;
+
+        [ScioParam("name_pattern", "Optional organisation-neutral view name pattern supporting {preset}, {level}, {tag}, {grid}, {index}.")]
+        public string? NamePattern { get; set; }
+
+        [ScioParam("sheet_number_prefix", "Optional caller-supplied sheet number prefix for preset=grid_elevations_sheets (default 'S').")]
+        public string SheetNumberPrefix { get; set; } = "S";
+
+        [ScioParam("limit", "Maximum planned items to return for operation=element_views (1..500, default 100).")]
+        public int Limit { get; set; } = 100;
 
         public ToolDescriptor Descriptor { get; } = JsonSchemaBuilder.DescribeTool(typeof(PlanViewsCommand));
 
@@ -289,6 +313,9 @@ namespace Scio.Module.Documentation
         {
             var doc = context.RequireActiveDocument(request.TargetDocument);
             string op = (request.Arguments.Value<string>("operation") ?? "deliverable_set").Trim().ToLowerInvariant();
+
+            if (op == "element_views")
+                return PlanElementViews(doc, request.RequestId, request.Arguments ?? new JObject());
 
             if (op == "room_views")
             {
@@ -337,6 +364,301 @@ namespace Scio.Module.Documentation
                 ["placed_views"] = placedViewIds.Count,
                 ["unplaced_views"] = unplaced.Count
             }, $"Deliverable set: {sheets.Count} sheet(s), {placedViewIds.Count} placed view(s), {unplaced.Count} unplaced.");
+        }
+
+        private static ToolResponse PlanElementViews(Document doc, string requestId, JObject args)
+        {
+            string preset = (args.Value<string>("preset") ?? "isometric_by_host").Trim().ToLowerInvariant();
+            string? levelFilter = args.Value<string>("level_name")?.Trim();
+            double paddingMm = Math.Max(0.0, args.Value<double?>("padding_mm") ?? 150.0);
+            int transverseCount = Math.Max(1, Math.Min(5, args.Value<int?>("transverse_count") ?? 1));
+            string namePattern = args.Value<string>("name_pattern") ?? string.Empty;
+            string sheetPrefix = string.IsNullOrWhiteSpace(args.Value<string>("sheet_number_prefix"))
+                ? "S"
+                : args.Value<string>("sheet_number_prefix")!.Trim();
+            int limit = Math.Max(1, Math.Min(500, args.Value<int?>("limit") ?? 100));
+
+            var explicitElements = args["element_ids"] is JArray idArr && idArr.Count > 0
+                ? RevitElementKit.ResolveElements(doc, idArr)
+                : null;
+
+            switch (preset)
+            {
+                case "isometric_by_host":
+                {
+                    var targets = (explicitElements ?? new FilteredElementCollector(doc)
+                            .OfCategory(BuiltInCategory.OST_Floors)
+                            .WhereElementIsNotElementType()
+                            .ToList())
+                        .Where(e => MatchesLevel(doc, e, levelFilter))
+                        .Take(limit)
+                        .ToList();
+
+                    var planned = new JArray();
+                    int idx = 1;
+                    foreach (var el in targets)
+                    {
+                        var bb = el.get_BoundingBox(null);
+                        if (bb == null) continue;
+                        var padded = PlanimetryMathKit.ComputePaddedBox(new[]
+                        {
+                            new Box3DMm
+                            {
+                                MinX = UnitKit.FeetToMm(bb.Min.X),
+                                MinY = UnitKit.FeetToMm(bb.Min.Y),
+                                MinZ = UnitKit.FeetToMm(bb.Min.Z),
+                                MaxX = UnitKit.FeetToMm(bb.Max.X),
+                                MaxY = UnitKit.FeetToMm(bb.Max.Y),
+                                MaxZ = UnitKit.FeetToMm(bb.Max.Z)
+                            }
+                        }, paddingMm)!;
+
+                        string lvl = ResolveElementLevelName(doc, el);
+                        string tag = ReadMarkOrId(el);
+                        string viewName = PlanimetryMathKit.FormatRevitSafeName(
+                            string.IsNullOrWhiteSpace(namePattern) ? "ISO_{level}_{tag}" : namePattern,
+                            "ISO", lvl, tag, string.Empty, idx++);
+
+                        planned.Add(new JObject
+                        {
+                            ["view_name"] = viewName,
+                            ["view_type"] = "3d",
+                            ["element_id"] = IdCompat.ToInt64(el.Id),
+                            ["category"] = el.Category?.Name ?? string.Empty,
+                            ["level"] = lvl,
+                            ["section_box_mm"] = new JObject
+                            {
+                                ["min_mm"] = new JArray(padded.MinX, padded.MinY, padded.MinZ),
+                                ["max_mm"] = new JArray(padded.MaxX, padded.MaxY, padded.MaxZ)
+                            },
+                            ["next_calls"] = new JArray
+                            {
+                                new JObject { ["tool"] = "scio_create_views", ["args"] = new JObject { ["view_type"] = "3d", ["name"] = viewName } },
+                                new JObject { ["tool"] = "scio_view_crop", ["args"] = new JObject { ["operation"] = "set_section_box_from_elements", ["element_ids"] = new JArray(IdCompat.ToInt64(el.Id)), ["padding_mm"] = paddingMm } }
+                            }
+                        });
+                    }
+
+                    return ToolResponse.Success(requestId, new JObject
+                    {
+                        ["preset"] = preset,
+                        ["padding_mm"] = paddingMm,
+                        ["planned_count"] = planned.Count,
+                        ["views"] = planned
+                    }, $"Planned {planned.Count} 3D isometric view(s) with section box.");
+                }
+
+                case "beam_sections":
+                {
+                    var beams = (explicitElements ?? new FilteredElementCollector(doc)
+                            .OfCategory(BuiltInCategory.OST_StructuralFraming)
+                            .WhereElementIsNotElementType()
+                            .ToList())
+                        .Where(e => MatchesLevel(doc, e, levelFilter))
+                        .Take(limit)
+                        .ToList();
+
+                    var planned = new JArray();
+                    int idx = 1;
+                    foreach (var beam in beams)
+                    {
+                        var bb = beam.get_BoundingBox(null);
+                        if (bb == null) continue;
+
+                        double[] startMm;
+                        double[] endMm;
+                        if (beam.Location is LocationCurve lc && lc.Curve != null)
+                        {
+                            var p0 = lc.Curve.GetEndPoint(0);
+                            var p1 = lc.Curve.GetEndPoint(1);
+                            startMm = new[] { UnitKit.FeetToMm(p0.X), UnitKit.FeetToMm(p0.Y), UnitKit.FeetToMm(p0.Z) };
+                            endMm = new[] { UnitKit.FeetToMm(p1.X), UnitKit.FeetToMm(p1.Y), UnitKit.FeetToMm(p1.Z) };
+                        }
+                        else
+                        {
+                            double midZ = UnitKit.FeetToMm((bb.Min.Z + bb.Max.Z) * 0.5);
+                            double spanX = UnitKit.FeetToMm(bb.Max.X - bb.Min.X);
+                            double spanY = UnitKit.FeetToMm(bb.Max.Y - bb.Min.Y);
+                            if (spanX >= spanY)
+                            {
+                                double midY = UnitKit.FeetToMm((bb.Min.Y + bb.Max.Y) * 0.5);
+                                startMm = new[] { UnitKit.FeetToMm(bb.Min.X), midY, midZ };
+                                endMm = new[] { UnitKit.FeetToMm(bb.Max.X), midY, midZ };
+                            }
+                            else
+                            {
+                                double midX = UnitKit.FeetToMm((bb.Min.X + bb.Max.X) * 0.5);
+                                startMm = new[] { midX, UnitKit.FeetToMm(bb.Min.Y), midZ };
+                                endMm = new[] { midX, UnitKit.FeetToMm(bb.Max.Y), midZ };
+                            }
+                        }
+
+                        double crossW = Math.Min(UnitKit.FeetToMm(bb.Max.X - bb.Min.X), UnitKit.FeetToMm(bb.Max.Y - bb.Min.Y));
+                        double crossH = UnitKit.FeetToMm(bb.Max.Z - bb.Min.Z);
+                        var frames = PlanimetryMathKit.ComputeBeamSectionFrames(startMm, endMm, crossW, crossH, paddingMm, transverseCount);
+                        if (frames.Count == 0) continue;
+
+                        string lvl = ResolveElementLevelName(doc, beam);
+                        string tag = ReadMarkOrId(beam);
+                        var frameArr = new JArray();
+                        int fIdx = 1;
+                        foreach (var f in frames)
+                        {
+                            string vName = PlanimetryMathKit.FormatRevitSafeName(
+                                string.IsNullOrWhiteSpace(namePattern) ? "SEC_{level}_{tag}_{preset}_{index}" : namePattern,
+                                f.Kind == "longitudinal" ? "LONG" : "TRANS", lvl, tag, string.Empty, fIdx++);
+                            frameArr.Add(new JObject
+                            {
+                                ["view_name"] = vName,
+                                ["kind"] = f.Kind,
+                                ["fraction"] = f.Fraction,
+                                ["origin_mm"] = new JArray(f.OriginMm),
+                                ["axis_dir_xy"] = new JArray(f.AxisDirXy),
+                                ["view_dir_xy"] = new JArray(f.ViewDirXy),
+                                ["width_mm"] = f.WidthMm,
+                                ["height_mm"] = f.HeightMm,
+                                ["depth_mm"] = f.DepthMm
+                            });
+                        }
+
+                        planned.Add(new JObject
+                        {
+                            ["element_id"] = IdCompat.ToInt64(beam.Id),
+                            ["tag"] = tag,
+                            ["level"] = lvl,
+                            ["section_count"] = frameArr.Count,
+                            ["sections"] = frameArr,
+                            ["index"] = idx++
+                        });
+                    }
+
+                    return ToolResponse.Success(requestId, new JObject
+                    {
+                        ["preset"] = preset,
+                        ["padding_mm"] = paddingMm,
+                        ["transverse_count"] = transverseCount,
+                        ["planned_count"] = planned.Count,
+                        ["beams"] = planned
+                    }, $"Planned longitudinal and transverse sections for {planned.Count} beam(s).");
+                }
+
+                case "grid_elevations_sheets":
+                {
+                    var grids = new FilteredElementCollector(doc)
+                        .OfClass(typeof(Grid))
+                        .Cast<Grid>()
+                        .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+                        .Take(limit)
+                        .ToList();
+
+                    var beams = (explicitElements ?? new FilteredElementCollector(doc)
+                            .OfCategory(BuiltInCategory.OST_StructuralFraming)
+                            .WhereElementIsNotElementType()
+                            .ToList())
+                        .Where(e => MatchesLevel(doc, e, levelFilter))
+                        .ToList();
+
+                    var sheetPlans = new JArray();
+                    int sheetIdx = 1;
+                    double tolFt = UnitKit.MmToFeet(Math.Max(250.0, paddingMm));
+
+                    foreach (var g in grids)
+                    {
+                        if (g.Curve == null) continue;
+                        var matchedIds = new List<long>();
+                        var boxes = new List<Box3DMm>();
+
+                        foreach (var b in beams)
+                        {
+                            var bb = b.get_BoundingBox(null);
+                            if (bb == null) continue;
+                            var mid = (bb.Min + bb.Max) * 0.5;
+                            var proj = g.Curve.Project(new XYZ(mid.X, mid.Y, g.Curve.GetEndPoint(0).Z));
+                            if (proj != null && proj.Distance <= tolFt)
+                            {
+                                matchedIds.Add(IdCompat.ToInt64(b.Id));
+                                boxes.Add(new Box3DMm
+                                {
+                                    MinX = UnitKit.FeetToMm(bb.Min.X),
+                                    MinY = UnitKit.FeetToMm(bb.Min.Y),
+                                    MinZ = UnitKit.FeetToMm(bb.Min.Z),
+                                    MaxX = UnitKit.FeetToMm(bb.Max.X),
+                                    MaxY = UnitKit.FeetToMm(bb.Max.Y),
+                                    MaxZ = UnitKit.FeetToMm(bb.Max.Z)
+                                });
+                            }
+                        }
+
+                        if (matchedIds.Count == 0) continue;
+                        var padded = PlanimetryMathKit.ComputePaddedBox(boxes, paddingMm)!;
+                        string lvlLabel = string.IsNullOrWhiteSpace(levelFilter) ? "ALL" : levelFilter!;
+                        string sheetNumber = $"{sheetPrefix}-{sheetIdx:D2}";
+                        string sheetName = PlanimetryMathKit.FormatRevitSafeName(
+                            string.IsNullOrWhiteSpace(namePattern) ? "GRID_{grid}_{level}" : namePattern,
+                            "GRID", lvlLabel, g.Name, g.Name, sheetIdx);
+                        string isoName = PlanimetryMathKit.FormatRevitSafeName("ISO_GRID_{grid}_{level}", "ISO", lvlLabel, g.Name, g.Name, sheetIdx);
+                        sheetIdx++;
+
+                        sheetPlans.Add(new JObject
+                        {
+                            ["grid_id"] = IdCompat.ToInt64(g.Id),
+                            ["grid_name"] = g.Name,
+                            ["sheet_number"] = sheetNumber,
+                            ["sheet_name"] = sheetName,
+                            ["isometric_view_name"] = isoName,
+                            ["matched_element_count"] = matchedIds.Count,
+                            ["element_ids"] = new JArray(matchedIds),
+                            ["section_box_mm"] = new JObject
+                            {
+                                ["min_mm"] = new JArray(padded.MinX, padded.MinY, padded.MinZ),
+                                ["max_mm"] = new JArray(padded.MaxX, padded.MaxY, padded.MaxZ)
+                            },
+                            ["next_calls"] = new JArray
+                            {
+                                new JObject { ["tool"] = "scio_create_views", ["args"] = new JObject { ["view_type"] = "3d", ["name"] = isoName } },
+                                new JObject { ["tool"] = "scio_view_crop", ["args"] = new JObject { ["operation"] = "set_section_box_from_elements", ["element_ids"] = new JArray(matchedIds), ["padding_mm"] = paddingMm } },
+                                new JObject { ["tool"] = "scio_manage_sheets", ["args"] = new JObject { ["action"] = "create", ["sheet_number"] = sheetNumber, ["sheet_name"] = sheetName } }
+                            }
+                        });
+                    }
+
+                    return ToolResponse.Success(requestId, new JObject
+                    {
+                        ["preset"] = preset,
+                        ["padding_mm"] = paddingMm,
+                        ["planned_count"] = sheetPlans.Count,
+                        ["sheets"] = sheetPlans
+                    }, $"Planned {sheetPlans.Count} grid-grouped sheet set(s).");
+                }
+
+                default:
+                    return ToolResponse.Refusal(requestId, "invalid_preset",
+                        $"Unsupported preset '{preset}'. Supported: isometric_by_host, beam_sections, grid_elevations_sheets.");
+            }
+        }
+
+        private static bool MatchesLevel(Document doc, Element el, string? levelFilter)
+        {
+            if (string.IsNullOrWhiteSpace(levelFilter)) return true;
+            string lvl = ResolveElementLevelName(doc, el);
+            return string.Equals(lvl, levelFilter, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ResolveElementLevelName(Document doc, Element el)
+        {
+            if (el.LevelId != ElementId.InvalidElementId && doc.GetElement(el.LevelId) is Level l)
+                return l.Name;
+            var refLvl = el.get_Parameter(BuiltInParameter.INSTANCE_REFERENCE_LEVEL_PARAM)?.AsElementId();
+            if (refLvl != null && refLvl != ElementId.InvalidElementId && doc.GetElement(refLvl) is Level rl)
+                return rl.Name;
+            return "Unassigned";
+        }
+
+        private static string ReadMarkOrId(Element el)
+        {
+            string? mark = el.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.AsString();
+            if (!string.IsNullOrWhiteSpace(mark)) return mark!.Trim();
+            return IdCompat.ToInt64(el.Id).ToString();
         }
     }
 

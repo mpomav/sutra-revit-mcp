@@ -138,6 +138,47 @@ namespace Scio.Server
                 readOnly: false,
                 openWorld: false,
                 executor: (args, ct) => AuditAccessTool.HandleRequestPythonAccess(args, ct));
+
+            registry.RegisterServerTool(
+                new ToolDescriptor
+                {
+                    Name = "scio_plan_from_image",
+                    Pack = "local",
+                    Description = "Host-resident read-only raster-to-vector planner (Otsu + Zhang-Suen thinning + Douglas-Peucker) with explicit scale calibration producing segments for scio_create_detail_lines or wall candidates for scio_create_elements.",
+                    ReadOnly = true,
+                    OpenWorld = false,
+                    InputSchema = new JObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JObject
+                        {
+                            ["image_path"] = new JObject { ["type"] = "string", ["description"] = "Absolute path to PNG/JPG/BMP/TIFF image file." },
+                            ["mm_per_pixel"] = new JObject { ["type"] = "number", ["description"] = "Explicit scale calibration in millimeters per pixel." },
+                            ["calibration_point_1_px"] = new JObject { ["type"] = "array", ["description"] = "First calibration point [x, y] in pixels." },
+                            ["calibration_point_2_px"] = new JObject { ["type"] = "array", ["description"] = "Second calibration point [x, y] in pixels." },
+                            ["known_distance_mm"] = new JObject { ["type"] = "number", ["description"] = "Known real-world distance in mm between the two calibration points." },
+                            ["origin_x_mm"] = new JObject { ["type"] = "number", ["description"] = "Optional model X origin in mm (default 0)." },
+                            ["origin_y_mm"] = new JObject { ["type"] = "number", ["description"] = "Optional model Y origin in mm (default 0)." },
+                            ["threshold_mode"] = new JObject { ["type"] = "string", ["enum"] = new JArray("otsu", "manual"), ["description"] = "Binarization mode (default otsu)." },
+                            ["manual_threshold"] = new JObject { ["type"] = "integer", ["description"] = "Manual grayscale threshold 0..255 (default 128)." },
+                            ["dark_foreground"] = new JObject { ["type"] = "boolean", ["description"] = "True if lines/walls are dark on light background (default true)." },
+                            ["min_segment_mm"] = new JObject { ["type"] = "number", ["description"] = "Minimum vectorized segment length in mm (default 150)." },
+                            ["simplify_tolerance_mm"] = new JObject { ["type"] = "number", ["description"] = "Douglas-Peucker tolerance in mm (default 25)." },
+                            ["min_wall_thickness_mm"] = new JObject { ["type"] = "number", ["description"] = "Minimum parallel wall thickness in mm (default 80)." },
+                            ["max_wall_thickness_mm"] = new JObject { ["type"] = "number", ["description"] = "Maximum parallel wall thickness in mm (default 450)." },
+                            ["max_segments"] = new JObject { ["type"] = "integer", ["description"] = "Maximum segments to return (default 300)." },
+                            ["target"] = new JObject { ["type"] = "string", ["enum"] = new JArray("detail_lines", "walls"), ["description"] = "Intended downstream target (default detail_lines)." }
+                        },
+                        ["required"] = new JArray("image_path"),
+                        ["additionalProperties"] = false
+                    }
+                },
+                (req, ct) =>
+                {
+                    var argsCopy = (req.Arguments?.DeepClone() as JObject) ?? new JObject();
+                    argsCopy["_request_id"] = req.RequestId;
+                    return PlanFromImageTool.Handle(argsCopy, ct);
+                });
         }
 
         private static void Register(

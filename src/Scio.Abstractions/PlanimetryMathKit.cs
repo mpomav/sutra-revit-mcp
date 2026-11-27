@@ -33,6 +33,28 @@ namespace Scio.Abstractions
         public double DeltaY { get; set; }
     }
 
+    public sealed class Box3DMm
+    {
+        public double MinX { get; set; }
+        public double MinY { get; set; }
+        public double MinZ { get; set; }
+        public double MaxX { get; set; }
+        public double MaxY { get; set; }
+        public double MaxZ { get; set; }
+    }
+
+    public sealed class BeamSectionPlanFrame
+    {
+        public string Kind { get; set; } = string.Empty;
+        public double Fraction { get; set; }
+        public double[] OriginMm { get; set; } = Array.Empty<double>();
+        public double[] AxisDirXy { get; set; } = Array.Empty<double>();
+        public double[] ViewDirXy { get; set; } = Array.Empty<double>();
+        public double WidthMm { get; set; }
+        public double HeightMm { get; set; }
+        public double DepthMm { get; set; }
+    }
+
     /// <summary>
     /// Pure geometry & deterministic color helpers for Ola 2 documentation/planimetry tools.
     /// </summary>
@@ -120,6 +142,146 @@ namespace Scio.Abstractions
             }
 
             return moves;
+        }
+
+        /// <summary>
+        /// Combines one or more 3D millimeter bounding boxes and expands symmetrically by paddingMm.
+        /// </summary>
+        public static Box3DMm? ComputePaddedBox(IEnumerable<Box3DMm> boxes, double paddingMm)
+        {
+            if (boxes == null) return null;
+            double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
+            double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
+            int count = 0;
+
+            foreach (var b in boxes)
+            {
+                if (b == null) continue;
+                if (b.MinX < minX) minX = b.MinX;
+                if (b.MinY < minY) minY = b.MinY;
+                if (b.MinZ < minZ) minZ = b.MinZ;
+                if (b.MaxX > maxX) maxX = b.MaxX;
+                if (b.MaxY > maxY) maxY = b.MaxY;
+                if (b.MaxZ > maxZ) maxZ = b.MaxZ;
+                count++;
+            }
+
+            if (count == 0) return null;
+            double pad = Math.Max(0.0, paddingMm);
+            return new Box3DMm
+            {
+                MinX = Math.Round(minX - pad, 1),
+                MinY = Math.Round(minY - pad, 1),
+                MinZ = Math.Round(minZ - pad, 1),
+                MaxX = Math.Round(maxX + pad, 1),
+                MaxY = Math.Round(maxY + pad, 1),
+                MaxZ = Math.Round(maxZ + pad, 1)
+            };
+        }
+
+        /// <summary>
+        /// Computes 1 longitudinal + N transverse section frames aligned to a beam's XY axis.
+        /// </summary>
+        public static List<BeamSectionPlanFrame> ComputeBeamSectionFrames(
+            double[] startMm,
+            double[] endMm,
+            double crossWidthMm,
+            double crossHeightMm,
+            double paddingMm = 150.0,
+            int transverseCount = 1)
+        {
+            var frames = new List<BeamSectionPlanFrame>();
+            if (startMm == null || endMm == null || startMm.Length < 3 || endMm.Length < 3)
+                return frames;
+
+            double dx = endMm[0] - startMm[0];
+            double dy = endMm[1] - startMm[1];
+            double lenXy = Math.Sqrt(dx * dx + dy * dy);
+            if (lenXy < 1e-3) return frames;
+
+            double ux = dx / lenXy;
+            double uy = dy / lenXy;
+            // Left-hand normal in XY plane
+            double nx = -uy;
+            double ny = ux;
+
+            double pad = Math.Max(0.0, paddingMm);
+            double w = Math.Max(100.0, crossWidthMm);
+            double h = Math.Max(100.0, crossHeightMm);
+            double midZ = (startMm[2] + endMm[2]) * 0.5;
+
+            // 1. Longitudinal section (looking perpendicular to beam axis)
+            frames.Add(new BeamSectionPlanFrame
+            {
+                Kind = "longitudinal",
+                Fraction = 0.5,
+                OriginMm = new[]
+                {
+                    Math.Round((startMm[0] + endMm[0]) * 0.5, 1),
+                    Math.Round((startMm[1] + endMm[1]) * 0.5, 1),
+                    Math.Round(midZ, 1)
+                },
+                AxisDirXy = new[] { Math.Round(ux, 6), Math.Round(uy, 6) },
+                ViewDirXy = new[] { Math.Round(nx, 6), Math.Round(ny, 6) },
+                WidthMm = Math.Round(lenXy + 2.0 * pad, 1),
+                HeightMm = Math.Round(h + 2.0 * pad, 1),
+                DepthMm = Math.Round(w + 2.0 * pad, 1)
+            });
+
+            // 2. Transverse sections distributed evenly along beam span
+            int count = Math.Max(1, Math.Min(5, transverseCount));
+            for (int i = 0; i < count; i++)
+            {
+                double frac = (i + 1.0) / (count + 1.0);
+                double ox = startMm[0] + dx * frac;
+                double oy = startMm[1] + dy * frac;
+                double oz = startMm[2] + (endMm[2] - startMm[2]) * frac;
+
+                frames.Add(new BeamSectionPlanFrame
+                {
+                    Kind = "transverse",
+                    Fraction = Math.Round(frac, 3),
+                    OriginMm = new[] { Math.Round(ox, 1), Math.Round(oy, 1), Math.Round(oz, 1) },
+                    AxisDirXy = new[] { Math.Round(nx, 6), Math.Round(ny, 6) },
+                    ViewDirXy = new[] { Math.Round(ux, 6), Math.Round(uy, 6) },
+                    WidthMm = Math.Round(w + 2.0 * pad, 1),
+                    HeightMm = Math.Round(h + 2.0 * pad, 1),
+                    DepthMm = Math.Round(Math.Max(300.0, pad * 2.0), 1)
+                });
+            }
+
+            return frames;
+        }
+
+        /// <summary>
+        /// Formats a Revit-safe view or sheet name from an organisation-neutral pattern.
+        /// Strips characters forbidden by Revit view names: \ : { } [ ] | ; &lt; &gt; ? ` ~
+        /// </summary>
+        public static string FormatRevitSafeName(
+            string pattern,
+            string preset,
+            string level,
+            string tag,
+            string grid,
+            int index)
+        {
+            string raw = string.IsNullOrWhiteSpace(pattern)
+                ? "{preset}_{level}_{tag}_{index}"
+                : pattern;
+
+            raw = raw
+                .Replace("{preset}", preset ?? string.Empty)
+                .Replace("{level}", level ?? string.Empty)
+                .Replace("{tag}", tag ?? string.Empty)
+                .Replace("{grid}", grid ?? string.Empty)
+                .Replace("{index}", index.ToString("D2"));
+
+            const string forbidden = "\\:{}[]|;<>?`~";
+            var chars = raw.Select(c => forbidden.IndexOf(c) >= 0 ? '_' : c).ToArray();
+            string cleaned = new string(chars).Trim();
+            while (cleaned.Contains("__")) cleaned = cleaned.Replace("__", "_");
+            cleaned = cleaned.Trim('_');
+            return string.IsNullOrWhiteSpace(cleaned) ? $"View_{index:D2}" : cleaned;
         }
     }
 }

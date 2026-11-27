@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\RevitCommon.props" />
+  <PropertyGroup>
+    <AssemblyName>Scio.Revit.CSharp</AssemblyName>
+    <RootNamespace>Scio.Revit.CSharp</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Scio.Abstractions\Scio.Abstractions.csproj" />
+    <ProjectReference Include="..\Scio.Revit.Sdk\Scio.Revit.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' != 'net48'">
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+  </ItemGroup>
+</Project>

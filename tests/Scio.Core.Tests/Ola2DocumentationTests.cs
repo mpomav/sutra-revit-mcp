@@ -32,5 +32,65 @@ namespace Scio.Core.Tests
             Assert.Equal("102", moves[0].Id);
             Assert.True(moves[0].DeltaX >= 115.0);
         }
+
+        [Fact]
+        public void ComputePaddedBox_MergesBoxesAndAppliesSymmetricPadding()
+        {
+            var boxes = new List<Box3DMm>
+            {
+                new Box3DMm { MinX = 0, MinY = 0, MinZ = 0, MaxX = 4000, MaxY = 300, MaxZ = 600 },
+                new Box3DMm { MinX = 3500, MinY = -200, MinZ = 0, MaxX = 8000, MaxY = 500, MaxZ = 800 }
+            };
+
+            var padded = PlanimetryMathKit.ComputePaddedBox(boxes, paddingMm: 150.0);
+            Assert.NotNull(padded);
+            Assert.Equal(-150.0, padded!.MinX);
+            Assert.Equal(-350.0, padded.MinY);
+            Assert.Equal(-150.0, padded.MinZ);
+            Assert.Equal(8150.0, padded.MaxX);
+            Assert.Equal(650.0, padded.MaxY);
+            Assert.Equal(950.0, padded.MaxZ);
+        }
+
+        [Fact]
+        public void ComputeBeamSectionFrames_ProducesLongitudinalAndTransverseFrames()
+        {
+            var frames = PlanimetryMathKit.ComputeBeamSectionFrames(
+                startMm: new[] { 0.0, 0.0, 3000.0 },
+                endMm: new[] { 6000.0, 0.0, 3000.0 },
+                crossWidthMm: 300.0,
+                crossHeightMm: 600.0,
+                paddingMm: 150.0,
+                transverseCount: 2);
+
+            Assert.Equal(3, frames.Count);
+            Assert.Equal("longitudinal", frames[0].Kind);
+            Assert.Equal(6300.0, frames[0].WidthMm);
+            Assert.Equal(900.0, frames[0].HeightMm);
+            Assert.Equal("transverse", frames[1].Kind);
+            Assert.Equal(2000.0, frames[1].OriginMm[0]);
+            Assert.Equal("transverse", frames[2].Kind);
+            Assert.Equal(4000.0, frames[2].OriginMm[0]);
+        }
+
+        [Fact]
+        public void FormatRevitSafeName_SanitizesForbiddenCharacters()
+        {
+            string name = PlanimetryMathKit.FormatRevitSafeName(
+                pattern: "ISO:{level}[{tag}]/{grid}",
+                preset: "ISO",
+                level: "N+03.50",
+                tag: "B<1>",
+                grid: "A|1",
+                index: 1);
+
+            Assert.DoesNotContain(":", name);
+            Assert.DoesNotContain("[", name);
+            Assert.DoesNotContain("]", name);
+            Assert.DoesNotContain("<", name);
+            Assert.DoesNotContain(">", name);
+            Assert.DoesNotContain("|", name);
+            Assert.Contains("N+03.50", name);
+        }
     }
 }

@@ -116,8 +116,8 @@ namespace Scio.Server
                 string toolName = ResolveToolName(registry, rawName);
                 if (toolName == ToolName)
                     throw new CodeModeException("tool_error", "Recursive call to '" + ToolName + "' is not allowed.");
-                if (toolName == "scio_execute_python")
-                    throw new CodeModeException("tool_error", "'scio_execute_python' is blocked inside " + ToolName + ".");
+                if (toolName == "scio_execute_python" || toolName == "scio_execute_csharp")
+                    throw new CodeModeException("tool_error", "'" + toolName + "' is blocked inside " + ToolName + ".");
                 if (toolName == "scio_call_tool")
                     throw new CodeModeException("tool_error", "'scio_call_tool' is blocked inside " + ToolName + "; call the target tool directly.");
 

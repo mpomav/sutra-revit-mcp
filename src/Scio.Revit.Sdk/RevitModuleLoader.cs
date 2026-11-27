@@ -114,7 +114,8 @@ namespace Scio.Revit.Sdk
         private static bool IsCandidateAssemblyName(string name)
         {
             return name.StartsWith("Scio.Module.", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(name, "Scio.Revit.Python", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(name, "Scio.Revit.Python", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "Scio.Revit.CSharp", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

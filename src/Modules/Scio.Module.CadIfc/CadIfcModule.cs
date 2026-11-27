@@ -17,6 +17,9 @@ namespace Scio.Module.CadIfc
             yield return new IfcAuditCommand();
             yield return new IdsCheckCommand();
             yield return new GeoreferenceCommand();
+            yield return new ScanToBimCommand();
+            yield return new ExportMeshCommand();
+            yield return new ManageImagesCommand();
         }
     }
 }

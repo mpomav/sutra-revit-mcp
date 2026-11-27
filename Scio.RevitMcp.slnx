@@ -4,6 +4,7 @@
     <Project Path="src/Scio.Ipc/Scio.Ipc.csproj" />
     <Project Path="src/Scio.Revit.Host/Scio.Revit.Host.csproj" />
     <Project Path="src/Scio.Revit.Python/Scio.Revit.Python.csproj" />
+    <Project Path="src/Scio.Revit.CSharp/Scio.Revit.CSharp.csproj" />
     <Project Path="src/Scio.Revit.Sdk/Scio.Revit.Sdk.csproj" />
     <Project Path="src/Scio.Revit.Ui/Scio.Revit.Ui.csproj" />
     <Project Path="src/Scio.Server/Scio.Server.csproj" />

@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Scio.Core.Tests
 {
+    [Collection("ProcessState")]
     public sealed class TelemetryAutoSendTests
     {
         private static void WithIsolatedRoot(Action<string> action)

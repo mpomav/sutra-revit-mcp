@@ -57,7 +57,7 @@ namespace Scio.Module.Documentation
         {
             "read", "set_crop_box", "reset_crop_shape", "set_crop_from_elements", "set_crop_from_room",
             "set_annotation_crop_offsets", "crop_active", "crop_visible",
-            "read_section_box", "section_box_active", "set_section_box"
+            "read_section_box", "section_box_active", "set_section_box", "set_section_box_from_elements"
         })]
         public string Operation { get; set; } = "read";
 
@@ -70,7 +70,7 @@ namespace Scio.Module.Documentation
         [ScioParam("max_mm", "Maximum corner [x, y, z] in mm for set_crop_box / set_section_box.")]
         public List<double>? MaxMm { get; set; }
 
-        [ScioParam("element_ids", "ElementIds for set_crop_from_elements.")]
+        [ScioParam("element_ids", "ElementIds for set_crop_from_elements or set_section_box_from_elements.")]
         public List<long>? ElementIds { get; set; }
 
         [ScioParam("room_id", "Room ElementId for set_crop_from_room.")]
@@ -216,14 +216,70 @@ namespace Scio.Module.Documentation
                             var sb = BuildBoxFromArgs(request.Arguments, Transform.Identity);
                             v3d.IsSectionBoxActive = true;
                             v3d.SetSectionBox(sb);
-                            return new JObject { ["view_id"] = IdCompat.ToInt64(v3d.Id), ["section_box"] = ViewResolveKit.SerializeBoxMm(v3d.GetSectionBox()) };
+                            return new JObject { ["view_id"] = IdCompat.ToInt64(v3d.Id), ["section_box_active"] = v3d.IsSectionBoxActive, ["section_box"] = ViewResolveKit.SerializeBoxMm(v3d.GetSectionBox()) };
+                        }
+                        case "set_section_box_from_elements":
+                        {
+                            if (view is not View3D v3d) throw new InvalidOperationException("Target view is not a 3D view.");
+                            var elems = RevitElementKit.ResolveElements(d, request.Arguments["element_ids"] as JArray);
+                            if (elems.Count == 0) throw new InvalidOperationException("No valid elements in 'element_ids'.");
+                            double padMm = request.Arguments.Value<double?>("padding_mm") ?? 150.0;
+                            var sb = ComputeWorldSectionBox(elems, padMm);
+                            v3d.IsSectionBoxActive = true;
+                            v3d.SetSectionBox(sb);
+                            return new JObject
+                            {
+                                ["view_id"] = IdCompat.ToInt64(v3d.Id),
+                                ["element_count"] = elems.Count,
+                                ["padding_mm"] = padMm,
+                                ["section_box_active"] = v3d.IsSectionBoxActive,
+                                ["section_box"] = ViewResolveKit.SerializeBoxMm(v3d.GetSectionBox())
+                            };
                         }
                         default:
                             throw new ArgumentException($"Unsupported operation '{op}'.");
                     }
                 },
-                (d, staged) => staged,
+                (d, staged) =>
+                {
+                    if ((op == "set_section_box" || op == "set_section_box_from_elements") &&
+                        d.GetElement(view.Id) is View3D verified3d)
+                    {
+                        staged["verified_section_box_active"] = verified3d.IsSectionBoxActive;
+                        staged["verified_section_box"] = ViewResolveKit.SerializeBoxMm(verified3d.GetSectionBox());
+                    }
+                    return staged;
+                },
                 $"View crop operation '{op}' applied to '{view.Name}'.");
+        }
+
+        private static BoundingBoxXYZ ComputeWorldSectionBox(List<Element> elems, double paddingMm)
+        {
+            var boxes = new List<Box3DMm>();
+            foreach (var el in elems)
+            {
+                var bb = el.get_BoundingBox(null);
+                if (bb == null) continue;
+                boxes.Add(new Box3DMm
+                {
+                    MinX = UnitKit.FeetToMm(bb.Min.X),
+                    MinY = UnitKit.FeetToMm(bb.Min.Y),
+                    MinZ = UnitKit.FeetToMm(bb.Min.Z),
+                    MaxX = UnitKit.FeetToMm(bb.Max.X),
+                    MaxY = UnitKit.FeetToMm(bb.Max.Y),
+                    MaxZ = UnitKit.FeetToMm(bb.Max.Z)
+                });
+            }
+
+            var padded = PlanimetryMathKit.ComputePaddedBox(boxes, paddingMm)
+                ?? throw new InvalidOperationException("None of the target elements has a valid 3D bounding box.");
+
+            return new BoundingBoxXYZ
+            {
+                Transform = Transform.Identity,
+                Min = new XYZ(UnitKit.MmToFeet(padded.MinX), UnitKit.MmToFeet(padded.MinY), UnitKit.MmToFeet(padded.MinZ)),
+                Max = new XYZ(UnitKit.MmToFeet(padded.MaxX), UnitKit.MmToFeet(padded.MaxY), UnitKit.MmToFeet(padded.MaxZ))
+            };
         }
 
         private static BoundingBoxXYZ BuildBoxFromArgs(JObject args, Transform transform)
