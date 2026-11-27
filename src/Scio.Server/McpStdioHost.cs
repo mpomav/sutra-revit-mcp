@@ -31,7 +31,7 @@ namespace Scio.Server
                 return plus > 0 ? info.InformationalVersion.Substring(0, plus) : info.InformationalVersion;
             }
             var v = asm.GetName().Version;
-            return v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.1.0";
+            return v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.3.0";
         }
         private readonly ServerToolRegistry _registry;
         private readonly string _schemaMode;

@@ -153,17 +153,14 @@ SCIO_SCHEMA_MODE = "$SchemaMode"
 
 function Get-ClaudeDesktopPaths {
     $paths = @()
-    $msixPkg = Get-ChildItem -Path "$env:LOCALAPPDATA\Packages" -Directory -Filter "Claude_*" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($msixPkg) {
-        $msixCfg = Join-Path $msixPkg.FullName "LocalCache\Roaming\Claude\claude_desktop_config.json"
-        if (Test-Path -LiteralPath (Split-Path -Parent $msixCfg)) {
-            $paths += $msixCfg
-        }
+    $msixPkgs = Get-ChildItem -Path "$env:LOCALAPPDATA\Packages" -Directory -Filter "Claude_*" -ErrorAction SilentlyContinue
+    foreach ($pkg in $msixPkgs) {
+        # Always target every Claude MSIX package even if LocalCache\Roaming\Claude does not exist yet;
+        # Write-AtomicUtf8 creates parent directories automatically so fresh Microsoft Store installs work.
+        $paths += (Join-Path $pkg.FullName "LocalCache\Roaming\Claude\claude_desktop_config.json")
     }
-    $classicCfg = Join-Path $env:APPDATA "Claude\claude_desktop_config.json"
-    if ((Test-Path -LiteralPath (Split-Path -Parent $classicCfg)) -or ($paths.Count -eq 0)) {
-        $paths += $classicCfg
-    }
+    # Always keep classic %APPDATA%\Claude in sync too (used by standalone .exe and MSIX "Edit Config" button).
+    $paths += (Join-Path $env:APPDATA "Claude\claude_desktop_config.json")
     return $paths | Select-Object -Unique
 }
 

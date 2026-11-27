@@ -11,7 +11,7 @@ namespace Scio.Revit.Ui
 {
     public sealed class ScioBridgeStatusSnapshot
     {
-        public string Version { get; set; } = "1.1.0";
+        public string Version { get; set; } = "1.3.0";
         public int RevitYear { get; set; }
         public string PipeName { get; set; } = string.Empty;
         public string ContractHash { get; set; } = string.Empty;

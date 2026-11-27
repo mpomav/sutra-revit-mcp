@@ -85,17 +85,26 @@ namespace Scio.Module.Documentation
         }
     }
 
-    [ScioTool("scio_create_schedule", "documentation", "Create a new ViewSchedule for a category and add specified parameter fields.", ReadOnly = false)]
+    [ScioTool("scio_create_schedule", "documentation", "Create a new ViewSchedule (element or material_takeoff) for a category with fields and optional grouping.", ReadOnly = false)]
     public sealed class CreateScheduleCommand : IRevitCommand
     {
-        [ScioParam("category", "Target category name (e.g. Walls, Doors, Structural Columns).", Required = true)]
+        [ScioParam("category", "Target category name (e.g. Walls, Doors, Structural Columns, or 'Multi-Category' for material_takeoff).", Required = true)]
         public string CategoryName { get; set; } = string.Empty;
 
         [ScioParam("name", "Schedule name.", Required = true)]
         public string Name { get; set; } = string.Empty;
 
+        [ScioParam("schedule_kind", "Schedule kind: element (default) or material_takeoff.", EnumValues = new[] { "element", "material_takeoff" })]
+        public string ScheduleKind { get; set; } = "element";
+
         [ScioParam("fields", "List of schedulable parameter field names to add.")]
         public List<string>? Fields { get; set; }
+
+        [ScioParam("group_by", "Optional field name (from 'fields') to sort/group the schedule by.")]
+        public string? GroupBy { get; set; }
+
+        [ScioParam("itemized", "Itemize every instance (default true).")]
+        public bool Itemized { get; set; } = true;
 
         [ScioParam("dry_run", "Preview without committing (default true).")]
         public bool DryRun { get; set; } = true;
@@ -105,12 +114,30 @@ namespace Scio.Module.Documentation
         public ToolResponse Execute(RevitContext context, ToolRequest request)
         {
             var doc = context.RequireActiveDocument(request.TargetDocument);
-            var cat = RevitElementKit.ResolveDocumentCategory(doc, request.Arguments.Value<string>("category"));
+            string catArg = (request.Arguments.Value<string>("category") ?? string.Empty).Trim();
             string name = request.Arguments.Value<string>("name") ?? string.Empty;
-            if (cat == null || string.IsNullOrWhiteSpace(name))
-                return ToolResponse.Refusal(request.RequestId, "invalid_request", "Provide valid 'category' and 'name'.");
+            string kind = (request.Arguments.Value<string>("schedule_kind") ?? "element").Trim().ToLowerInvariant();
+            bool isMultiCat = string.Equals(catArg, "Multi-Category", StringComparison.OrdinalIgnoreCase);
+
+            ElementId catId;
+            if (isMultiCat)
+            {
+                catId = ElementId.InvalidElementId;
+            }
+            else
+            {
+                var cat = RevitElementKit.ResolveDocumentCategory(doc, catArg);
+                if (cat == null)
+                    return ToolResponse.Refusal(request.RequestId, "invalid_request", $"Category '{catArg}' not found.");
+                catId = cat.Id;
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+                return ToolResponse.Refusal(request.RequestId, "invalid_request", "Provide a valid 'name'.");
 
             var wanted = (request.Arguments["fields"] as JArray)?.Select(t => t.ToString()).ToList() ?? new List<string>();
+            string? groupBy = request.Arguments.Value<string>("group_by")?.Trim();
+            bool itemized = request.Arguments.Value<bool?>("itemized") ?? true;
             bool dryRun = request.DryRun ?? request.Arguments.Value<bool?>("dry_run") ?? true;
 
             return TransactionPipeline.RunVerified(
@@ -120,19 +147,48 @@ namespace Scio.Module.Documentation
                 dryRun,
                 d =>
                 {
-                    var vs = ViewSchedule.CreateSchedule(d, cat.Id);
+                    var vs = kind == "material_takeoff"
+                        ? ViewSchedule.CreateMaterialTakeoff(d, catId)
+                        : ViewSchedule.CreateSchedule(d, catId);
                     vs.Name = name;
+                    vs.Definition.IsItemized = itemized;
                     var avail = vs.Definition.GetSchedulableFields();
                     var added = new JArray();
+                    ScheduleField? groupField = null;
                     foreach (string fName in wanted)
                     {
                         var sf = avail.FirstOrDefault(x => string.Equals(x.GetName(d), fName, StringComparison.OrdinalIgnoreCase));
-                        if (sf != null) { vs.Definition.AddField(sf); added.Add(fName); }
+                        if (sf != null)
+                        {
+                            var field = vs.Definition.AddField(sf);
+                            added.Add(fName);
+                            if (!string.IsNullOrWhiteSpace(groupBy) && string.Equals(fName, groupBy, StringComparison.OrdinalIgnoreCase))
+                                groupField = field;
+                        }
                     }
-                    return new JObject { ["id"] = IdCompat.ToInt64(vs.Id), ["name"] = vs.Name, ["added_fields"] = added };
+
+                    if (groupField != null)
+                    {
+                        var sgf = new ScheduleSortGroupField(groupField.FieldId) { ShowHeader = true, ShowFooter = true };
+                        vs.Definition.AddSortGroupField(sgf);
+                    }
+
+                    return new JObject
+                    {
+                        ["id"] = IdCompat.ToInt64(vs.Id),
+                        ["name"] = vs.Name,
+                        ["schedule_kind"] = kind,
+                        ["itemized"] = vs.Definition.IsItemized,
+                        ["grouped_by"] = groupField != null ? groupBy : null,
+                        ["added_fields"] = added
+                    };
                 },
-                (d, staged) => staged,
-                $"Created schedule '{name}'.");
+                (d, staged) =>
+                {
+                    staged["verified"] = RevitElementKit.ResolveElement(d, staged["id"]) is ViewSchedule;
+                    return staged;
+                },
+                $"Created {kind} schedule '{name}'.");
         }
     }
 

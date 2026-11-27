@@ -127,7 +127,7 @@ namespace Scio.Revit.Ui
             bool decided = false;
 
             var win = new Window();
-            ScioTheme.ApplyWindowChrome(win, owner, "Bienvenido a Sutra — SCIO Revit MCP", 560, null, resizable: false);
+            ScioTheme.ApplyWindowChrome(win, owner, "Bienvenido a Sutra — Revit MCP", 560, null, resizable: false);
             win.PreviewKeyDown += (s, e) =>
             {
                 if (e.Key == Key.Escape)
@@ -180,7 +180,7 @@ namespace Scio.Revit.Ui
             productTitle.VerticalAlignment = VerticalAlignment.Center;
             nameRow.Children.Add(productTitle);
 
-            var versionBadge = ScioTheme.Badge("v" + (string.IsNullOrWhiteSpace(version) ? "1.1.0" : version), ScioTheme.AccentSoft, ScioTheme.AccentText);
+            var versionBadge = ScioTheme.Badge("v" + (string.IsNullOrWhiteSpace(version) ? "1.3.0" : version), ScioTheme.AccentSoft, ScioTheme.AccentText);
             versionBadge.Margin = new Thickness(10, 0, 0, 0);
             versionBadge.VerticalAlignment = VerticalAlignment.Center;
             nameRow.Children.Add(versionBadge);

@@ -32,10 +32,23 @@ namespace Scio.Ipc
 
     public static class SessionRegistry
     {
+        /// <summary>
+        /// Legacy LocalAppData sessions directory (kept for backward compatibility with older servers).
+        /// </summary>
         public static string SessionsDirectory =>
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Scio", "RevitMcpV4", "sessions");
+
+        /// <summary>
+        /// MSIX-safe sessions directory under %USERPROFILE%\.scio\v4\sessions.
+        /// Windows MSIX/Microsoft Store apps (e.g. Claude Desktop from MS Store) virtualize %LOCALAPPDATA%,
+        /// whereas %USERPROFILE%\.scio is shared directly between Win32 Revit and MSIX-spawned MCP servers.
+        /// </summary>
+        public static string UserProfileSessionsDirectory =>
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".scio", "v4", "sessions");
 
         /// <summary>Optional test hook overriding the Revit sessions directory.</summary>
         public static string? DirectoryOverride { get; set; }
@@ -43,8 +56,20 @@ namespace Scio.Ipc
         /// <summary>Optional test hook overriding PID liveness checks.</summary>
         public static Func<int, bool>? LivenessProbe { get; set; }
 
-        private static string EffectiveDirectory =>
-            !string.IsNullOrWhiteSpace(DirectoryOverride) ? DirectoryOverride! : SessionsDirectory;
+        private static IEnumerable<string> GetSearchDirectories()
+        {
+            if (!string.IsNullOrWhiteSpace(DirectoryOverride))
+            {
+                yield return DirectoryOverride!;
+                yield break;
+            }
+
+            yield return UserProfileSessionsDirectory;
+            if (!string.Equals(SessionsDirectory, UserProfileSessionsDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return SessionsDirectory;
+            }
+        }
 
         public static string BuildPipeName(int revitYear, int pid)
         {
@@ -59,10 +84,32 @@ namespace Scio.Ipc
 
         public static string WriteBeacon(RevitSessionBeacon beacon)
         {
-            Directory.CreateDirectory(SessionsDirectory);
-            string path = Path.Combine(SessionsDirectory, $"revit-{beacon.RevitYear}-{beacon.Pid}.json");
+            string fileName = $"revit-{beacon.RevitYear}-{beacon.Pid}.json";
+            string json = JsonConvert.SerializeObject(beacon, Formatting.Indented);
+
+            if (!string.IsNullOrWhiteSpace(DirectoryOverride))
+            {
+                return WriteBeaconToDirectory(DirectoryOverride!, fileName, json);
+            }
+
+            string primaryPath = WriteBeaconToDirectory(UserProfileSessionsDirectory, fileName, json);
+            try
+            {
+                WriteBeaconToDirectory(SessionsDirectory, fileName, json);
+            }
+            catch
+            {
+                // Best-effort mirror to legacy LocalAppData path
+            }
+            return primaryPath;
+        }
+
+        private static string WriteBeaconToDirectory(string dir, string fileName, string json)
+        {
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, fileName);
             string tmp = path + ".tmp";
-            File.WriteAllText(tmp, JsonConvert.SerializeObject(beacon, Formatting.Indented), Encoding.UTF8);
+            File.WriteAllText(tmp, json, Encoding.UTF8);
             if (File.Exists(path)) File.Delete(path);
             File.Move(tmp, path);
             return path;
@@ -70,39 +117,53 @@ namespace Scio.Ipc
 
         public static void RemoveBeacon(int revitYear, int pid)
         {
-            string path = Path.Combine(SessionsDirectory, $"revit-{revitYear}-{pid}.json");
-            try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort cleanup */ }
+            string fileName = $"revit-{revitYear}-{pid}.json";
+            foreach (string dir in GetSearchDirectories())
+            {
+                string path = Path.Combine(dir, fileName);
+                try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort cleanup */ }
+            }
         }
 
         public static List<RevitSessionBeacon> DiscoverLiveSessions()
         {
-            var live = new List<RevitSessionBeacon>();
-            string dir = EffectiveDirectory;
-            if (!Directory.Exists(dir)) return live;
+            var byPipe = new Dictionary<string, RevitSessionBeacon>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (string file in Directory.GetFiles(dir, "revit-*.json"))
+            foreach (string dir in GetSearchDirectories())
             {
-                try
-                {
-                    var beacon = JsonConvert.DeserializeObject<RevitSessionBeacon>(File.ReadAllText(file, Encoding.UTF8));
-                    if (beacon == null || string.IsNullOrWhiteSpace(beacon.PipeName)) continue;
+                if (!Directory.Exists(dir)) continue;
 
-                    if (IsProcessAlive(beacon.Pid))
-                    {
-                        live.Add(beacon);
-                    }
-                    else
-                    {
-                        try { File.Delete(file); } catch { }
-                    }
-                }
-                catch
+                foreach (string file in Directory.GetFiles(dir, "revit-*.json"))
                 {
-                    // Ignore malformed or transient files
+                    try
+                    {
+                        var beacon = JsonConvert.DeserializeObject<RevitSessionBeacon>(File.ReadAllText(file, Encoding.UTF8));
+                        if (beacon == null || string.IsNullOrWhiteSpace(beacon.PipeName)) continue;
+
+                        if (IsProcessAlive(beacon.Pid))
+                        {
+                            if (!byPipe.TryGetValue(beacon.PipeName, out var existing) ||
+                                string.CompareOrdinal(beacon.StartedUtc, existing.StartedUtc) > 0)
+                            {
+                                byPipe[beacon.PipeName] = beacon;
+                            }
+                        }
+                        else
+                        {
+                            try { File.Delete(file); } catch { }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore malformed or transient files
+                    }
                 }
             }
 
-            return live.OrderByDescending(b => b.RevitYear).ThenByDescending(b => b.StartedUtc, StringComparer.Ordinal).ToList();
+            return byPipe.Values
+                .OrderByDescending(b => b.RevitYear)
+                .ThenByDescending(b => b.StartedUtc, StringComparer.Ordinal)
+                .ToList();
         }
 
         private static bool IsProcessAlive(int pid)

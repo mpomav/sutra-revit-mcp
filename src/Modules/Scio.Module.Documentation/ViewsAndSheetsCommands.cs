@@ -274,14 +274,17 @@ namespace Scio.Module.Documentation
         }
     }
 
-    [ScioTool("scio_view_templates", "documentation", "List view templates or assign a view template to one or more views.", ReadOnly = false)]
+    [ScioTool("scio_view_templates", "documentation", "List view templates, assign a view template to views, or create a view template from an existing view.", ReadOnly = false)]
     public sealed class ViewTemplatesCommand : IRevitCommand
     {
-        [ScioParam("action", "Operation: list (default) or assign.", EnumValues = new[] { "list", "assign" })]
+        [ScioParam("action", "Operation: list (default), assign, or create_from_view.", EnumValues = new[] { "list", "assign", "create_from_view" })]
         public string Action { get; set; } = "list";
 
-        [ScioParam("template_name", "Template name to assign (or 'None' to clear).")]
+        [ScioParam("template_name", "Template name to assign (or 'None' to clear), or new template name for create_from_view.")]
         public string TemplateName { get; set; } = string.Empty;
+
+        [ScioParam("view_id", "Optional source View ElementId for create_from_view (defaults to active view).")]
+        public long? ViewId { get; set; }
 
         [ScioParam("view_ids", "Target view IDs for assign.")]
         public List<long>? ViewIds { get; set; }
@@ -308,6 +311,46 @@ namespace Scio.Module.Documentation
                 return ToolResponse.Success(request.RequestId, new JObject { ["count"] = arr.Count, ["templates"] = arr }, $"Found {arr.Count} view template(s).");
             }
 
+            bool dryRun = request.DryRun ?? request.Arguments.Value<bool?>("dry_run") ?? true;
+
+            if (action == "create_from_view")
+            {
+                string newName = (request.Arguments.Value<string>("template_name") ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(newName))
+                    return ToolResponse.Refusal(request.RequestId, "missing_template_name", "Provide 'template_name' for action=create_from_view.");
+
+                View? srcView = request.Arguments["view_id"] != null && request.Arguments["view_id"]!.Type != JTokenType.Null
+                    ? RevitElementKit.ResolveElement(doc, request.Arguments["view_id"]) as View
+                    : doc.ActiveView;
+                if (srcView == null || srcView.IsTemplate)
+                    return ToolResponse.Refusal(request.RequestId, "invalid_source_view", "Provide a valid non-template source view.");
+
+                return TransactionPipeline.RunVerified(
+                    doc,
+                    request.RequestId,
+                    $"Create View Template {newName}",
+                    dryRun,
+                    d =>
+                    {
+                        var created = srcView.CreateViewTemplate();
+                        created.Name = newName;
+                        return new JObject
+                        {
+                            ["template_id"] = IdCompat.ToInt64(created.Id),
+                            ["name"] = created.Name,
+                            ["view_type"] = created.ViewType.ToString(),
+                            ["source_view_id"] = IdCompat.ToInt64(srcView.Id)
+                        };
+                    },
+                    (d, staged) =>
+                    {
+                        var reRead = RevitElementKit.ResolveElement(d, staged["template_id"]) as View;
+                        staged["verified"] = reRead != null && reRead.IsTemplate;
+                        return staged;
+                    },
+                    $"Created view template '{newName}' from '{srcView.Name}'.");
+            }
+
             string tplName = request.Arguments.Value<string>("template_name") ?? string.Empty;
             bool clear = string.Equals(tplName, "None", StringComparison.OrdinalIgnoreCase);
             View? tpl = clear ? null : templates.FirstOrDefault(t => string.Equals(t.Name, tplName, StringComparison.OrdinalIgnoreCase));
@@ -318,7 +361,6 @@ namespace Scio.Module.Documentation
             if (views.Count == 0)
                 return ToolResponse.Refusal(request.RequestId, "no_views", "No valid target views found.");
 
-            bool dryRun = request.DryRun ?? request.Arguments.Value<bool?>("dry_run") ?? true;
             return TransactionPipeline.RunVerified(
                 doc,
                 request.RequestId,

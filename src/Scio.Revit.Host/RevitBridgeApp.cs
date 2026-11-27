@@ -191,6 +191,16 @@ namespace Scio.Revit.Host
                         ["is_family_document"] = doc.IsFamilyDocument
                     }
                 };
+                var cachedUpdate = SutraUpdateChecker.TryGetCachedUpdate(RevitBridgeApp.CurrentVersion);
+                if (cachedUpdate != null && cachedUpdate.UpdateAvailable)
+                {
+                    data["update_available"] = new JObject
+                    {
+                        ["latest_version"] = cachedUpdate.LatestVersion,
+                        ["download_url"] = cachedUpdate.DownloadUrl,
+                        ["release_url"] = cachedUpdate.ReleaseUrl
+                    };
+                }
                 return ToolResponse.Success(request.RequestId, data, $"Healthy on Revit {context.RevitYear} ({_owner._commands.Count} tools).");
             }
         }
@@ -214,7 +224,7 @@ namespace Scio.Revit.Host
                 return plus > 0 ? info.InformationalVersion.Substring(0, plus) : info.InformationalVersion;
             }
             var v = asm.GetName().Version;
-            return v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.1.0";
+            return v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.3.0";
         }
 
         private ScioPipeServer? _pipeServer;
@@ -271,21 +281,29 @@ namespace Scio.Revit.Host
             };
             ScioRibbon.Build(application);
 
-            // First-run welcome dialog for strictly opt-in anonymous telemetry.
+            // First-run welcome dialog for strictly opt-in anonymous telemetry,
+            // plus a silent 24h-cached background check for newer Sutra releases.
             // Deferred to ApplicationInitialized so Revit's main window is ready
             // and never blocks startup.
-            int welcomeShown = 0;
+            int startupChecked = 0;
             application.ControlledApplication.ApplicationInitialized += (sender, args) =>
             {
-                if (Interlocked.Exchange(ref welcomeShown, 1) != 0) return;
+                if (Interlocked.Exchange(ref startupChecked, 1) != 0) return;
                 try
                 {
+                    IntPtr owner = IntPtr.Zero;
+                    try { owner = Process.GetCurrentProcess().MainWindowHandle; } catch { }
+
+                    bool showedWelcome = false;
                     if (!TelemetryPreferences.HasAnsweredWelcomePrompt())
                     {
-                        IntPtr owner = IntPtr.Zero;
-                        try { owner = Process.GetCurrentProcess().MainWindowHandle; } catch { }
                         WelcomeTelemetryDialog.ShowIfFirstRun(owner, CurrentVersion);
+                        showedWelcome = true;
                     }
+
+                    // Skip update modal on the very first run to avoid stacking two dialogs,
+                    // but still refresh the background cache for subsequent startups / scio_health.
+                    UpdateAvailableDialog.CheckInBackground(owner, CurrentVersion, showModal: !showedWelcome);
                 }
                 catch { /* never fail Revit startup */ }
             };

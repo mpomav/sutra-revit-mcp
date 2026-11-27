@@ -21,6 +21,7 @@ namespace Scio.Module.AuditQa
             yield return new PurgeUnusedCommand();
             yield return new CodeCheckCommand();
             yield return new ChangeSurveyCommand();
+            yield return new MaterialTakeoffCommand();
         }
     }
 }

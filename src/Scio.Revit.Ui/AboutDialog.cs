@@ -1,15 +1,17 @@
 #nullable disable
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Scio.Abstractions;
 
 namespace Scio.Revit.Ui
 {
     /// <summary>
-    /// Branded "Acerca de Sutra — SCIO Revit MCP" modal dialog following ScioTheme (Light/Dark).
+    /// Branded "Acerca de Sutra — Revit MCP" modal dialog following ScioTheme (Light/Dark).
     /// </summary>
     internal static class AboutDialog
     {
@@ -21,7 +23,7 @@ namespace Scio.Revit.Ui
             ScioTheme.Refresh();
 
             var win = new Window();
-            ScioTheme.ApplyWindowChrome(win, owner, "Acerca de Sutra — SCIO Revit MCP", 540, null, resizable: false);
+            ScioTheme.ApplyWindowChrome(win, owner, "Acerca de Sutra — Revit MCP", 560, null, resizable: false);
             win.PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape) win.Close(); };
 
             var root = new StackPanel { Background = ScioTheme.Ground };
@@ -62,7 +64,7 @@ namespace Scio.Revit.Ui
             });
 
             var nameRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
-            var productTitle = ScioTheme.Text("Sutra — SCIO Revit MCP", 18, ScioTheme.Ink, FontWeights.Bold);
+            var productTitle = ScioTheme.Text("Sutra — Revit MCP", 18, ScioTheme.Ink, FontWeights.Bold);
             productTitle.VerticalAlignment = VerticalAlignment.Center;
             nameRow.Children.Add(productTitle);
 
@@ -143,7 +145,7 @@ namespace Scio.Revit.Ui
                 try
                 {
                     string summary =
-                        $"Sutra — SCIO Revit MCP v{snap.Version}\n" +
+                        $"Sutra — Revit MCP v{snap.Version}\n" +
                         $"Revit: {snap.RevitYear}\n" +
                         $"Estado: {(snap.IsPaused ? "PAUSADO" : "ACTIVO")}\n" +
                         $"Perfil: {snap.PermissionProfile}\n" +
@@ -156,6 +158,41 @@ namespace Scio.Revit.Ui
             });
             DockPanel.SetDock(copyBtn, Dock.Left);
             footer.Children.Add(copyBtn);
+
+            Button updateBtn = null;
+            updateBtn = ScioTheme.Button("Buscar actualizaciones", null, ScioTheme.ButtonKind.Secondary, () =>
+            {
+                if (updateBtn == null) return;
+                updateBtn.IsEnabled = false;
+                updateBtn.Content = "Buscando...";
+                var dispatcher = win.Dispatcher;
+                Task.Run(async () =>
+                {
+                    var info = await SutraUpdateChecker.CheckForUpdateAsync(snap.Version, forceRefresh: true).ConfigureAwait(false);
+                    dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (!win.IsLoaded) return;
+                        if (info == null)
+                        {
+                            updateBtn.Content = "Sin conexión";
+                            updateBtn.IsEnabled = true;
+                        }
+                        else if (info.UpdateAvailable)
+                        {
+                            updateBtn.Content = "Nueva v" + info.LatestVersion;
+                            updateBtn.IsEnabled = true;
+                            UpdateAvailableDialog.Show(owner, info);
+                        }
+                        else
+                        {
+                            updateBtn.Content = "Al día (v" + info.CurrentVersion + ")";
+                            updateBtn.IsEnabled = false;
+                        }
+                    }));
+                });
+            });
+            DockPanel.SetDock(updateBtn, Dock.Left);
+            footer.Children.Add(updateBtn);
 
             var closeBtn = ScioTheme.Button("Cerrar", null, ScioTheme.ButtonKind.Primary, () => win.Close());
             closeBtn.Margin = new Thickness(0);

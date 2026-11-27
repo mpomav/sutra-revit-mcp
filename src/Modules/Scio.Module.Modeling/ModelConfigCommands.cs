@@ -297,23 +297,50 @@ namespace Scio.Module.Modeling
         }
     }
 
-    [ScioTool("scio_manage_materials", "modeling", "List materials or create a new Material with RGB color and transparency.", ReadOnly = false)]
+    [ScioTool("scio_manage_materials", "modeling", "List, create, update (rename/description/cost/keynote/mark/color), or assign Revit Materials with dry-run verification.", ReadOnly = false)]
     public sealed class ManageMaterialsCommand : IRevitCommand
     {
-        [ScioParam("action", "Operation: list (default) or create.", EnumValues = new[] { "list", "create" })]
+        [ScioParam("action", "Operation: list (default), create, update, or assign.", EnumValues = new[] { "list", "create", "update", "assign" })]
         public string Action { get; set; } = "list";
 
         [ScioParam("filter", "Optional substring filter for action=list.")]
         public string Filter { get; set; } = string.Empty;
 
-        [ScioParam("name", "New material name for action=create.")]
+        [ScioParam("material_id", "Target Material ElementId for action=update or action=assign.")]
+        public long? MaterialId { get; set; }
+
+        [ScioParam("name", "Material name (new name for create, or lookup name for update/assign).")]
         public string Name { get; set; } = string.Empty;
 
-        [ScioParam("rgb", "Optional [r, g, b] color values (0..255) for action=create.")]
+        [ScioParam("new_name", "Optional new name when renaming a material in action=update.")]
+        public string? NewName { get; set; }
+
+        [ScioParam("description", "Optional Description parameter value for create/update.")]
+        public string? Description { get; set; }
+
+        [ScioParam("cost", "Optional Cost parameter value for create/update.")]
+        public double? Cost { get; set; }
+
+        [ScioParam("keynote", "Optional Keynote parameter value for create/update.")]
+        public string? Keynote { get; set; }
+
+        [ScioParam("mark", "Optional Mark parameter value for create/update.")]
+        public string? Mark { get; set; }
+
+        [ScioParam("comments", "Optional Comments parameter value for create/update.")]
+        public string? Comments { get; set; }
+
+        [ScioParam("rgb", "Optional [r, g, b] color values (0..255) for create/update.")]
         public List<int>? Rgb { get; set; }
 
-        [ScioParam("transparency", "Optional transparency (0..100) for action=create.")]
+        [ScioParam("transparency", "Optional transparency (0..100) for create/update.")]
         public int? Transparency { get; set; }
+
+        [ScioParam("items", "Optional batch list of material update objects [{ material_id?, name?, new_name?, description?, cost?, keynote?, mark?, comments?, rgb?, transparency? }] for action=update.")]
+        public JArray? Items { get; set; }
+
+        [ScioParam("element_ids", "Target ElementIds for action=assign.")]
+        public List<long>? ElementIds { get; set; }
 
         [ScioParam("dry_run", "Preview without committing (default true).")]
         public bool DryRun { get; set; } = true;
@@ -323,11 +350,12 @@ namespace Scio.Module.Modeling
         public ToolResponse Execute(RevitContext context, ToolRequest request)
         {
             var doc = context.RequireActiveDocument(request.TargetDocument);
-            string action = (request.Arguments.Value<string>("action") ?? "list").Trim().ToLowerInvariant();
+            var args = request.Arguments ?? new JObject();
+            string action = (args.Value<string>("action") ?? "list").Trim().ToLowerInvariant();
 
             if (action == "list")
             {
-                string filter = request.Arguments.Value<string>("filter") ?? string.Empty;
+                string filter = args.Value<string>("filter") ?? string.Empty;
                 var mats = new FilteredElementCollector(doc).OfClass(typeof(Material)).Cast<Material>()
                     .Where(m => string.IsNullOrWhiteSpace(filter) || m.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0)
                     .OrderBy(m => m.Name)
@@ -337,6 +365,9 @@ namespace Scio.Module.Modeling
                         ["id"] = IdCompat.ToInt64(m.Id),
                         ["name"] = m.Name,
                         ["class"] = m.MaterialClass ?? string.Empty,
+                        ["description"] = m.get_Parameter(BuiltInParameter.ALL_MODEL_DESCRIPTION)?.AsString() ?? string.Empty,
+                        ["keynote"] = m.get_Parameter(BuiltInParameter.KEYNOTE_PARAM)?.AsString() ?? string.Empty,
+                        ["cost"] = m.get_Parameter(BuiltInParameter.ALL_MODEL_COST)?.AsDouble(),
                         ["rgb"] = m.Color.IsValid ? new JArray(m.Color.Red, m.Color.Green, m.Color.Blue) : null,
                         ["transparency"] = m.Transparency
                     });
@@ -344,32 +375,173 @@ namespace Scio.Module.Modeling
                 return ToolResponse.Success(request.RequestId, new JObject { ["count"] = arr.Count, ["materials"] = arr }, $"Listed {arr.Count} material(s).");
             }
 
-            string matName = request.Arguments.Value<string>("name") ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(matName))
-                return ToolResponse.Refusal(request.RequestId, "missing_name", "Provide 'name' for new material.");
+            bool dryRun = request.DryRun ?? args.Value<bool?>("dry_run") ?? true;
 
-            bool dryRun = request.DryRun ?? request.Arguments.Value<bool?>("dry_run") ?? true;
-            return TransactionPipeline.RunVerified(
-                doc,
-                request.RequestId,
-                $"Create Material {matName}",
-                dryRun,
-                d =>
-                {
-                    ElementId id = Material.Create(d, matName);
-                    var mat = (Material)d.GetElement(id);
-                    if (request.Arguments["rgb"] is JArray rgb && rgb.Count >= 3)
-                        mat.Color = new Color((byte)rgb[0].Value<int>(), (byte)rgb[1].Value<int>(), (byte)rgb[2].Value<int>());
-                    int? transp = request.Arguments.Value<int?>("transparency");
-                    if (transp.HasValue) mat.Transparency = Math.Max(0, Math.Min(100, transp.Value));
-                    return new JObject { ["id"] = IdCompat.ToInt64(id), ["name"] = mat.Name };
-                },
-                (d, staged) =>
-                {
-                    staged["verified"] = RevitElementKit.ResolveElement(d, staged["id"]) != null;
-                    return staged;
-                },
-                $"Created material '{matName}'.");
+            if (action == "create")
+            {
+                string matName = args.Value<string>("name") ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(matName))
+                    return ToolResponse.Refusal(request.RequestId, "missing_name", "Provide 'name' for new material.");
+
+                return TransactionPipeline.RunVerified(
+                    doc,
+                    request.RequestId,
+                    $"Create Material {matName}",
+                    dryRun,
+                    d =>
+                    {
+                        ElementId id = Material.Create(d, matName);
+                        var mat = (Material)d.GetElement(id);
+                        ApplyMaterialFields(mat, args);
+                        return new JObject { ["id"] = IdCompat.ToInt64(id), ["name"] = mat.Name };
+                    },
+                    (d, staged) =>
+                    {
+                        staged["verified"] = RevitElementKit.ResolveElement(d, staged["id"]) is Material;
+                        return staged;
+                    },
+                    $"Created material '{matName}'.");
+            }
+
+            if (action == "update")
+            {
+                var batch = args["items"] as JArray;
+                var specs = batch != null && batch.Count > 0
+                    ? batch.OfType<JObject>().ToList()
+                    : new List<JObject> { args };
+
+                return TransactionPipeline.RunVerified(
+                    doc,
+                    request.RequestId,
+                    "Update Materials",
+                    dryRun,
+                    d =>
+                    {
+                        var updated = new JArray();
+                        var missing = new JArray();
+                        foreach (var spec in specs)
+                        {
+                            var mat = ResolveMaterial(d, spec["material_id"], spec.Value<string>("name"));
+                            if (mat == null)
+                            {
+                                missing.Add(spec.Value<string>("name") ?? spec["material_id"]?.ToString() ?? "unknown");
+                                continue;
+                            }
+                            string? newName = spec.Value<string>("new_name")?.Trim();
+                            if (!string.IsNullOrWhiteSpace(newName) && !string.Equals(mat.Name, newName, StringComparison.Ordinal))
+                                mat.Name = newName!;
+                            ApplyMaterialFields(mat, spec);
+                            updated.Add(new JObject
+                            {
+                                ["id"] = IdCompat.ToInt64(mat.Id),
+                                ["name"] = mat.Name,
+                                ["description"] = mat.get_Parameter(BuiltInParameter.ALL_MODEL_DESCRIPTION)?.AsString() ?? string.Empty,
+                                ["keynote"] = mat.get_Parameter(BuiltInParameter.KEYNOTE_PARAM)?.AsString() ?? string.Empty,
+                                ["cost"] = mat.get_Parameter(BuiltInParameter.ALL_MODEL_COST)?.AsDouble()
+                            });
+                        }
+                        if (updated.Count == 0)
+                            throw new InvalidOperationException("No target materials were found to update.");
+                        return new JObject { ["updated_count"] = updated.Count, ["updated"] = updated, ["missing"] = missing };
+                    },
+                    (d, staged) =>
+                    {
+                        staged["verified"] = (staged["updated_count"]?.Value<int>() ?? 0) > 0;
+                        return staged;
+                    },
+                    $"Updated {specs.Count} material specification(s).");
+            }
+
+            if (action == "assign")
+            {
+                var mat = ResolveMaterial(doc, args["material_id"], args.Value<string>("name"));
+                if (mat == null)
+                    return ToolResponse.Refusal(request.RequestId, "material_not_found", "Provide a valid 'material_id' or 'name'.");
+
+                var elems = RevitElementKit.ResolveElements(doc, args["element_ids"] as JArray);
+                if (elems.Count == 0)
+                    return ToolResponse.Refusal(request.RequestId, "no_elements", "Provide valid 'element_ids' for action=assign.");
+
+                return TransactionPipeline.RunVerified(
+                    doc,
+                    request.RequestId,
+                    $"Assign Material {mat.Name}",
+                    dryRun,
+                    d =>
+                    {
+                        int assigned = 0;
+                        var skipped = new JArray();
+                        foreach (var el in elems)
+                        {
+                            var p = el.get_Parameter(BuiltInParameter.STRUCTURAL_MATERIAL_PARAM)
+                                ?? el.get_Parameter(BuiltInParameter.MATERIAL_ID_PARAM);
+                            if (p != null && !p.IsReadOnly && p.StorageType == StorageType.ElementId)
+                            {
+                                p.Set(mat.Id);
+                                assigned++;
+                            }
+                            else
+                            {
+                                skipped.Add(IdCompat.ToInt64(el.Id));
+                            }
+                        }
+                        return new JObject
+                        {
+                            ["material_id"] = IdCompat.ToInt64(mat.Id),
+                            ["material_name"] = mat.Name,
+                            ["assigned_count"] = assigned,
+                            ["skipped_ids"] = skipped
+                        };
+                    },
+                    (d, staged) =>
+                    {
+                        staged["verified"] = (staged["assigned_count"]?.Value<int>() ?? 0) > 0;
+                        return staged;
+                    },
+                    $"Assigned material '{mat.Name}' to target elements.");
+            }
+
+            return ToolResponse.Refusal(request.RequestId, "invalid_action", $"Unsupported action '{action}'.");
+        }
+
+        private static Material? ResolveMaterial(Document doc, JToken? idToken, string? name)
+        {
+            if (idToken != null && idToken.Type != JTokenType.Null && RevitElementKit.ResolveElement(doc, idToken) is Material byId)
+                return byId;
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                return new FilteredElementCollector(doc).OfClass(typeof(Material)).Cast<Material>()
+                    .FirstOrDefault(m => string.Equals(m.Name, name!.Trim(), StringComparison.OrdinalIgnoreCase));
+            }
+            return null;
+        }
+
+        private static void ApplyMaterialFields(Material mat, JObject spec)
+        {
+            if (spec["rgb"] is JArray rgb && rgb.Count >= 3)
+                mat.Color = new Color((byte)rgb[0].Value<int>(), (byte)rgb[1].Value<int>(), (byte)rgb[2].Value<int>());
+            int? transp = spec.Value<int?>("transparency");
+            if (transp.HasValue) mat.Transparency = Math.Max(0, Math.Min(100, transp.Value));
+
+            SetStringParam(mat, BuiltInParameter.ALL_MODEL_DESCRIPTION, spec.Value<string>("description"));
+            SetStringParam(mat, BuiltInParameter.KEYNOTE_PARAM, spec.Value<string>("keynote"));
+            SetStringParam(mat, BuiltInParameter.ALL_MODEL_MARK, spec.Value<string>("mark"));
+            SetStringParam(mat, BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS, spec.Value<string>("comments"));
+
+            double? cost = spec.Value<double?>("cost");
+            if (cost.HasValue)
+            {
+                var cp = mat.get_Parameter(BuiltInParameter.ALL_MODEL_COST);
+                if (cp != null && !cp.IsReadOnly) cp.Set(cost.Value);
+            }
+        }
+
+        private static void SetStringParam(Element el, BuiltInParameter bip, string? value)
+        {
+            if (value == null) return;
+            var p = el.get_Parameter(bip);
+            if (p != null && !p.IsReadOnly && p.StorageType == StorageType.String)
+                p.Set(value);
         }
     }
 

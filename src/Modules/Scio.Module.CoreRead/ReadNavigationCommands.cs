@@ -357,7 +357,7 @@ namespace Scio.Module.CoreRead
 
                 if (signatures != null)
                 {
-                    signatures.Add(new JObject
+                    var sigObj = new JObject
                     {
                         ["id"] = IdCompat.ToInt64(el.Id),
                         ["uid"] = el.UniqueId,
@@ -365,7 +365,19 @@ namespace Scio.Module.CoreRead
                         ["type_id"] = IdCompat.ToInt64(el.GetTypeId()),
                         ["level_id"] = IdCompat.ToInt64(el.LevelId),
                         ["name"] = el.Name ?? string.Empty
-                    });
+                    };
+                    var bb = el.get_BoundingBox(null);
+                    if (bb != null)
+                    {
+                        sigObj["bbox_mm"] = new JArray(
+                            Math.Round(UnitKit.FeetToMm(bb.Min.X), 1),
+                            Math.Round(UnitKit.FeetToMm(bb.Min.Y), 1),
+                            Math.Round(UnitKit.FeetToMm(bb.Min.Z), 1),
+                            Math.Round(UnitKit.FeetToMm(bb.Max.X), 1),
+                            Math.Round(UnitKit.FeetToMm(bb.Max.Y), 1),
+                            Math.Round(UnitKit.FeetToMm(bb.Max.Z), 1));
+                    }
+                    signatures.Add(sigObj);
                 }
             }
 
@@ -409,6 +421,9 @@ namespace Scio.Module.CoreRead
         [ScioParam("limit", "Maximum items per diff bucket (added, removed, modified). Default 200.")]
         public int Limit { get; set; } = 200;
 
+        [ScioParam("geometry_tolerance_mm", "Bounding-box delta threshold in mm to flag geometry_changed (default 1.0).")]
+        public double GeometryToleranceMm { get; set; } = 1.0;
+
         public ToolDescriptor Descriptor { get; } = JsonSchemaBuilder.DescribeTool(typeof(ModelDiffCommand));
 
         public ToolResponse Execute(RevitContext context, ToolRequest request)
@@ -419,6 +434,7 @@ namespace Scio.Module.CoreRead
                 return ToolResponse.Refusal(request.RequestId, "snapshot_not_found", $"Baseline snapshot not found: '{path}'.");
 
             int limit = Math.Max(1, Math.Min(2000, request.Arguments.Value<int?>("limit") ?? 200));
+            double geomTolMm = Math.Max(0.0, request.Arguments.Value<double?>("geometry_tolerance_mm") ?? 1.0);
             var baseline = JObject.Parse(File.ReadAllText(path));
             var baseElements = baseline["elements"] as JArray;
             if (baseElements == null)
@@ -456,20 +472,56 @@ namespace Scio.Module.CoreRead
                     long prevType = prev.Value<long>("type_id");
                     long prevLevel = prev.Value<long>("level_id");
                     string prevName = prev.Value<string>("name") ?? string.Empty;
-                    if (prevType != typeId || prevLevel != levelId || !string.Equals(prevName, el.Name ?? string.Empty, StringComparison.Ordinal))
+                    bool typeChanged = prevType != typeId;
+                    bool levelChanged = prevLevel != levelId;
+                    bool nameChanged = !string.Equals(prevName, el.Name ?? string.Empty, StringComparison.Ordinal);
+
+                    bool geomChanged = false;
+                    JArray? currBbox = null;
+                    if (prev["bbox_mm"] is JArray prevBbox && prevBbox.Count >= 6)
+                    {
+                        var bb = el.get_BoundingBox(null);
+                        if (bb != null)
+                        {
+                            currBbox = new JArray(
+                                Math.Round(UnitKit.FeetToMm(bb.Min.X), 1),
+                                Math.Round(UnitKit.FeetToMm(bb.Min.Y), 1),
+                                Math.Round(UnitKit.FeetToMm(bb.Min.Z), 1),
+                                Math.Round(UnitKit.FeetToMm(bb.Max.X), 1),
+                                Math.Round(UnitKit.FeetToMm(bb.Max.Y), 1),
+                                Math.Round(UnitKit.FeetToMm(bb.Max.Z), 1));
+                            for (int bi = 0; bi < 6; bi++)
+                            {
+                                if (Math.Abs(currBbox[bi].Value<double>() - prevBbox[bi].Value<double>()) > geomTolMm)
+                                {
+                                    geomChanged = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (typeChanged || levelChanged || nameChanged || geomChanged)
                     {
                         modifiedTotal++;
                         if (modified.Count < limit)
                         {
-                            modified.Add(new JObject
+                            var modObj = new JObject
                             {
                                 ["id"] = IdCompat.ToInt64(el.Id),
                                 ["uid"] = uid,
                                 ["category"] = el.Category.Name,
-                                ["type_changed"] = prevType != typeId,
-                                ["level_changed"] = prevLevel != levelId,
-                                ["name_changed"] = !string.Equals(prevName, el.Name ?? string.Empty, StringComparison.Ordinal)
-                            });
+                                ["type_changed"] = typeChanged,
+                                ["level_changed"] = levelChanged,
+                                ["name_changed"] = nameChanged,
+                                ["geometry_changed"] = geomChanged
+                            };
+                            if (geomChanged && currBbox != null)
+                            {
+                                modObj["bbox_before_mm"] = prev["bbox_mm"];
+                                modObj["bbox_after_mm"] = currBbox;
+                            }
+                            modified.Add(modObj);
                         }
                     }
                 }

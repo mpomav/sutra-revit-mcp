@@ -102,7 +102,7 @@ namespace Scio.Server
                 return plus > 0 ? info.InformationalVersion.Substring(0, plus) : info.InformationalVersion;
             }
             var v = asm.GetName().Version;
-            return v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.1.0";
+            return v != null ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.3.0";
         }
 
         public static void RecordToolCall(string toolName, bool ok, long elapsedMs, string schemaMode, string? version = null)

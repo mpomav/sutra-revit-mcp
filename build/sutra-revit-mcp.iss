@@ -7,10 +7,10 @@
 #define AppPublisher   "SCIO DC"
 #define AppUrl         "https://github.com/mpomav/sutra-revit-mcp"
 #ifndef AppVersion
-  #define AppVersion "1.2.0"
+  #define AppVersion "1.3.0"
 #endif
 #ifndef StageDir
-  #define StageDir "..\dist\sutra-1.2.0"
+  #define StageDir "..\dist\sutra-1.3.0"
 #endif
 
 [Setup]
@@ -33,7 +33,8 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=assets\sutra-setup.ico
-WizardImageFile=assets\wizard-banner.bmp
+WizardImageFile=assets\sutra-wizard-100.bmp,assets\sutra-wizard-125.bmp,assets\sutra-wizard-150.bmp,assets\sutra-wizard-175.bmp,assets\sutra-wizard-200.bmp,assets\sutra-wizard-225.bmp,assets\sutra-wizard-250.bmp
+WizardImageStretch=no
 WizardSmallImageFile=assets\wizard-small.bmp
 PrivilegesRequired=lowest
 UninstallDisplayName={#AppName} {#AppVersion}
@@ -52,10 +53,10 @@ es.RevitRunning=Autodesk Revit está abierto. Cierra todas las ventanas de Revit
 en.RevitRunning=Autodesk Revit is currently running. Close all Revit windows before continuing Sutra installation or upgrade.
 es.CadRunning=AutoCAD / Civil 3D está abierto. Cierra todas las ventanas de AutoCAD / Civil 3D antes de continuar con la instalación o actualización de Sutra.
 en.CadRunning=AutoCAD / Civil 3D is currently running. Close all AutoCAD / Civil 3D windows before continuing Sutra installation or upgrade.
-es.FinishedInstall=Sutra MCP v%1 se instaló correctamente.%n%nRuta del servidor MCP:%n%2%n%nRevit actualizado: %3%nAutoCAD / Civil 3D actualizado: %4%nClientes MCP configurados: %5%n%nReinicia tu cliente de IA y abre Revit, AutoCAD o Civil 3D (acepta "Cargar siempre" si aparece el aviso).
-en.FinishedInstall=Sutra MCP v%1 was installed successfully.%n%nMCP Server path:%n%2%n%nUpdated Revit versions: %3%nUpdated AutoCAD / Civil 3D versions: %4%nConfigured MCP clients: %5%n%nRestart your AI client and open Revit, AutoCAD, or Civil 3D (choose "Always Load" if prompted).
-es.FinishedUpgrade=Sutra MCP se actualizó correctamente (%1 -> v%2).%n%nRuta del servidor MCP:%n%3%n%nRevit actualizado: %4%nAutoCAD / Civil 3D actualizado: %5%nClientes MCP actualizados: %6%n%nReinicia tu cliente de IA y abre Revit, AutoCAD o Civil 3D para cargar la nueva versión.
-en.FinishedUpgrade=Sutra MCP was upgraded successfully (%1 -> v%2).%n%nMCP Server path:%n%3%n%nUpdated Revit versions: %4%nUpdated AutoCAD / Civil 3D versions: %5%nUpdated MCP clients: %6%n%nRestart your AI client and open Revit, AutoCAD, or Civil 3D to load the new version.
+es.FinishedInstall=Sutra MCP v%1 se instaló correctamente.%n%nRuta del servidor MCP:%n%2%n%nRevit actualizado: %3%nAutoCAD / Civil 3D actualizado: %4%nClientes MCP configurados: %5%n%nCierra completamente tu cliente de IA (en Claude Desktop: clic derecho en el ícono de la bandeja del sistema -> Salir/Quit), vuelve a abrirlo y abre Revit, AutoCAD o Civil 3D (acepta "Cargar siempre" si aparece el aviso).
+en.FinishedInstall=Sutra MCP v%1 was installed successfully.%n%nMCP Server path:%n%2%n%nUpdated Revit versions: %3%nUpdated AutoCAD / Civil 3D versions: %4%nConfigured MCP clients: %5%n%nFully quit your AI client (in Claude Desktop: right-click the system tray icon -> Quit), relaunch it, and open Revit, AutoCAD, or Civil 3D (choose "Always Load" if prompted).
+es.FinishedUpgrade=Sutra MCP se actualizó correctamente (%1 -> v%2).%n%nRuta del servidor MCP:%n%3%n%nRevit actualizado: %4%nAutoCAD / Civil 3D actualizado: %5%nClientes MCP actualizados: %6%n%nCierra completamente tu cliente de IA (en Claude Desktop: clic derecho en la bandeja del sistema -> Salir/Quit), vuelve a abrirlo y abre Revit, AutoCAD o Civil 3D para cargar la nueva versión.
+en.FinishedUpgrade=Sutra MCP was upgraded successfully (%1 -> v%2).%n%nMCP Server path:%n%3%n%nUpdated Revit versions: %4%nUpdated AutoCAD / Civil 3D versions: %5%nUpdated MCP clients: %6%n%nFully quit your AI client (in Claude Desktop: right-click the system tray icon -> Quit), relaunch it, and open Revit, AutoCAD, or Civil 3D to load the new version.
 es.NoRevitFound=ninguna detectada (2023–2027)
 en.NoRevitFound=none detected (2023–2027)
 es.NoCadFound=ninguna detectada (2023–2026)
@@ -408,10 +409,14 @@ begin
     Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -ServerExe "' + ServerExe + '" -Clients "' + SelectedCsv + '" -SummaryFile "' + SummaryPath + '"';
   end;
 
-  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    ResultCode := -1;
 
   if FileExists(SummaryPath) and LoadStringFromFile(SummaryPath, SummaryBytes) then
     ConfiguredMcpList := Trim(string(SummaryBytes));
+
+  if (ConfiguredMcpList = '') and (ResultCode <> 0) then
+    ConfiguredMcpList := 'error (code ' + IntToStr(ResultCode) + ') — run scripts\configure-mcp-clients.ps1';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

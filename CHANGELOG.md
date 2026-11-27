@@ -1,5 +1,31 @@
 # Changelog — Sutra (Revit, AutoCAD & Civil 3D MCP by SCIO DC)
 
+## v1.3.0 (2026-11-26)
+
+Clean-room expansion adding structural view planning, web-ready 3D mesh export (`glTF 2.0 / .glb` & `geometry_json`), 2-layer raster Image → BIM workflows, Roslyn in-memory C# execution under `UnsafeCode`, and per-material takeoff/CRUD parity across Revit 2023–2027.
+
+### Highlights & New Capabilities
+
+- **Section Box from Elements & Structural View Planner (Phase 1):**
+  - `scio_view_crop`: added `set_section_box_from_elements` (`element_ids` + `padding_mm`) with post-commit read-back verification (`verified_section_box_active`, `verified_section_box`).
+  - `scio_plan_views`: added read-only `element_views` planner with 3 organisation-neutral presets (`isometric_by_host`, `beam_sections`, `grid_elevations_sheets`) and pure math helpers in `PlanimetryMathKit`.
+- **Lightweight 3D Mesh Export for Web Viewers (Phase 2):**
+  - `scio_export_mesh` + `MeshExportKit`: exports triangulated 3D meshes via Revit `CustomExporter` (`IExportContext`) as binary **glTF 2.0 (`.glb`)** or compact **`geometry_json` (`scio.mesh/1`)** with scope filters (`view_id`, `level_name`, `categories`, `element_ids`), explicit `omitted_elements`, atomic disk write, and post-commit header/SHA-256 verification.
+- **2-Layer Raster Image → BIM (Phase 3):**
+  - `scio_manage_images`: typed Revit raster management (`list`, `import`, `transform`, `reload`, `delete`) with `dry_run: true` default and post-commit read-back.
+  - `scio_plan_from_image` + `ImageVectorizeKit`: host-resident read-only vectorization in `Scio.Server` (Otsu thresholding, Zhang-Suen thinning, Douglas-Peucker simplification, parallel-face wall pairing) enforcing explicit scale calibration (`mm_per_pixel` or two calibration points + `known_distance_mm`).
+- **Owner-Gated Dynamic C# Execution (Phase 4):**
+  - `Scio.Revit.CSharp` (`scio_execute_csharp`): in-memory Roslyn compilation + collectible `AssemblyLoadContext` on Revit 2025–2027 (`.NET 8/10`), explicit `unsupported_runtime_net48` refusal on Revit 2023–2024 (`.NET Framework 4.8`), disabled by default (`PermissionProfile.UnsafeCode`), blocked inside `CodeModeTool`, `host_verified: false`, zero HTTP/CORS.
+- **Material Takeoff, CRUD, Templates & Geometry Diff Parity (Phase 5):**
+  - `scio_material_takeoff`: per-material area (m²) and volume (m³) takeoff from compound layers and optional paint faces with organisation-neutral `unit_rates` costing and JSON/CSV export.
+  - `scio_create_schedule`: added `schedule_kind: "material_takeoff"` (`ViewSchedule.CreateMaterialTakeoff`, including `Multi-Category`), `group_by`, and `itemized`.
+  - `scio_manage_materials`: added `action: "update"` (single or batch rename, `description`, `cost`, `keynote`, `mark`, `comments`, `rgb`, `transparency`) and `action: "assign"`.
+  - `scio_view_templates`: added `action: "create_from_view"` (`view.CreateViewTemplate()`).
+  - `scio_model_scan` & `scio_model_diff`: added `bbox_mm` snapshots and `geometry_changed` detection with configurable `geometry_tolerance_mm`.
+- **IFC Delivery Fix (`scio_deliver_ifc`):** added `export_rooms` (`SpaceBoundaryLevel` + `ExportRoomsInView=true`, default `true`), `export_revit_property_sets` (`ExportInternalRevitPropertySets=true`, default `true` so `Comments` and `Mark` export to IFC), `export_ifc_common_property_sets`, `view_id`, and post-export `ifc_space_count` / `ifc_property_set_count` verification.
+- **Claude Desktop (Microsoft Store / MSIX) MCP Fix:** `scripts/configure-mcp-clients.ps1` now configures every `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\claude_desktop_config.json` (creating parent folders if needed) alongside `%APPDATA%\Claude`, and `SessionRegistry` now publishes and discovers Revit session beacons under `%USERPROFILE%\.scio\v4\sessions` (unaffected by MSIX `%LOCALAPPDATA%` virtualization) with backward-compatible fallback.
+- **In-App Update Alerts (`SutraUpdateChecker` & `UpdateAvailableDialog`):** non-blocking 24h-cached GitHub Releases check on Revit startup, manual "Buscar actualizaciones" button in `AboutDialog`, and cached `update_available` metadata in `scio_health`.
+
 ## v1.2.0 (2026-11-26)
 
 Unified multi-host release: a single Windows Setup installer now deploys **Sutra** across **Autodesk Revit (2023–2027)**, **AutoCAD (2023–2026)**, and **Civil 3D (2023–2026)**, adding parametric automatic drafting across all disciplines and a local Design Criteria Manager (`SUTRACRITERIA`).

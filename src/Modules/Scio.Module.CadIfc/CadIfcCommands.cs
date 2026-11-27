@@ -275,7 +275,7 @@ namespace Scio.Module.CadIfc
         }
     }
 
-    [ScioTool("scio_deliver_ifc", "cad_ifc", "Export the active Revit model to IFC (IFC2x3 or IFC4) and verify the generated .ifc file size and SHA-256 hash.", ReadOnly = false, OpenWorld = true)]
+    [ScioTool("scio_deliver_ifc", "cad_ifc", "Export the active Revit model to IFC (IFC2x3 or IFC4) with room/IfcSpace and Revit property-set (Comments/Mark) options, and verify file size, SHA-256, and IfcSpace/IfcPropertySet counts.", ReadOnly = false, OpenWorld = true)]
     public sealed class DeliverIfcCommand : IRevitCommand
     {
         [ScioParam("output_folder", "Target folder for the .ifc file.", Required = true)]
@@ -287,16 +287,44 @@ namespace Scio.Module.CadIfc
         [ScioParam("ifc_version", "IFC schema version: IFC2x3 or IFC4 (default).", EnumValues = new[] { "IFC2x3", "IFC4" })]
         public string IfcVersion { get; set; } = "IFC4";
 
+        [ScioParam("export_rooms", "Export Rooms as IfcSpace entities (default true). Sets SpaceBoundaryLevel >= 1 and ExportRoomsInView=true.")]
+        public bool ExportRooms { get; set; } = true;
+
+        [ScioParam("space_boundary_level", "IFC Space Boundary level: 0 (none), 1 (1st level, default when export_rooms=true), or 2 (2nd level).")]
+        public int? SpaceBoundaryLevel { get; set; }
+
+        [ScioParam("export_revit_property_sets", "Enable 'Export Revit property sets' (ExportInternalRevitPropertySets=true, default true) so Revit parameters such as Comments and Mark are written to the IFC.")]
+        public bool ExportRevitPropertySets { get; set; } = true;
+
+        [ScioParam("export_ifc_common_property_sets", "Export standard IFC common Pset_* property sets (default true).")]
+        public bool ExportIfcCommonPropertySets { get; set; } = true;
+
+        [ScioParam("export_base_quantities", "Export IFC base quantities (default true).")]
+        public bool ExportBaseQuantities { get; set; } = true;
+
+        [ScioParam("view_id", "Optional View ElementId to restrict export to elements visible in that view.")]
+        public long? ViewId { get; set; }
+
         public ToolDescriptor Descriptor { get; } = JsonSchemaBuilder.DescribeTool(typeof(DeliverIfcCommand));
 
         public ToolResponse Execute(RevitContext context, ToolRequest request)
         {
             var doc = context.RequireActiveDocument(request.TargetDocument);
-            string folder = request.Arguments.Value<string>("output_folder") ?? string.Empty;
-            string name = request.Arguments.Value<string>("file_name") ?? string.Empty;
-            string ver = (request.Arguments.Value<string>("ifc_version") ?? "IFC4").Trim();
+            var args = request.Arguments ?? new JObject();
+            string folder = args.Value<string>("output_folder") ?? string.Empty;
+            string name = args.Value<string>("file_name") ?? string.Empty;
+            string ver = (args.Value<string>("ifc_version") ?? "IFC4").Trim();
             if (string.IsNullOrWhiteSpace(folder) || string.IsNullOrWhiteSpace(name))
                 return ToolResponse.Refusal(request.RequestId, "invalid_request", "Provide 'output_folder' and 'file_name'.");
+
+            bool exportRooms = args.Value<bool?>("export_rooms") ?? true;
+            int sbLevel = args.Value<int?>("space_boundary_level") ?? (exportRooms ? 1 : 0);
+            sbLevel = Math.Max(0, Math.Min(2, sbLevel));
+            if (exportRooms && sbLevel == 0) sbLevel = 1;
+
+            bool exportRevitPsets = args.Value<bool?>("export_revit_property_sets") ?? true;
+            bool exportCommonPsets = args.Value<bool?>("export_ifc_common_property_sets") ?? true;
+            bool exportBaseQty = args.Value<bool?>("export_base_quantities") ?? true;
 
             if (!name.EndsWith(".ifc", StringComparison.OrdinalIgnoreCase)) name += ".ifc";
             Directory.CreateDirectory(folder);
@@ -304,8 +332,23 @@ namespace Scio.Module.CadIfc
             var opts = new IFCExportOptions
             {
                 FileVersion = string.Equals(ver, "IFC2x3", StringComparison.OrdinalIgnoreCase) ? IFCVersion.IFC2x3CV2 : IFCVersion.IFC4RV,
-                ExportBaseQuantities = true
+                ExportBaseQuantities = exportBaseQty,
+                SpaceBoundaryLevel = sbLevel
             };
+
+            opts.AddOption("ExportRoomsInView", exportRooms ? "true" : "false");
+            opts.AddOption("ExportInternalRevitPropertySets", exportRevitPsets ? "true" : "false");
+            opts.AddOption("ExportIFCCommonPropertySets", exportCommonPsets ? "true" : "false");
+            opts.AddOption("ExportSchedulesAsPsets", "false");
+
+            if (args["view_id"] != null && args["view_id"]!.Type != JTokenType.Null)
+            {
+                var filterView = RevitElementKit.ResolveElement(doc, args["view_id"]) as View;
+                if (filterView == null)
+                    return ToolResponse.Refusal(request.RequestId, "view_not_found", "Provide a valid 'view_id'.");
+                opts.FilterViewId = filterView.Id;
+                opts.AddOption("VisibleElementsOfCurrentView", "true");
+            }
 
             bool ok;
             using (var tx = new Transaction(doc, "SCIO: Export IFC"))
@@ -324,13 +367,37 @@ namespace Scio.Module.CadIfc
             using (var fs = File.OpenRead(fullPath))
                 sha256 = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
 
+            int ifcSpaceCount = 0;
+            int ifcPsetCount = 0;
+            foreach (string line in File.ReadLines(fullPath))
+            {
+                if (line.IndexOf("= IFCSPACE(", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    line.IndexOf("=IFCSPACE(", StringComparison.OrdinalIgnoreCase) >= 0)
+                    ifcSpaceCount++;
+                else if (line.IndexOf("= IFCPROPERTYSET(", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         line.IndexOf("=IFCPROPERTYSET(", StringComparison.OrdinalIgnoreCase) >= 0)
+                    ifcPsetCount++;
+            }
+
+            long sizeBytes = new FileInfo(fullPath).Length;
+            var warnings = new JArray();
+            if (exportRooms && ifcSpaceCount == 0)
+                warnings.Add("export_rooms=true was requested, but 0 IfcSpace entities were found in the exported IFC (verify that placed Rooms exist and are visible/bounded).");
+
             return ToolResponse.Success(request.RequestId, new JObject
             {
                 ["path"] = fullPath,
                 ["ifc_version"] = ver,
-                ["size_bytes"] = new FileInfo(fullPath).Length,
-                ["sha256"] = sha256
-            }, $"Delivered IFC '{name}' ({new FileInfo(fullPath).Length / 1024} KB).");
+                ["size_bytes"] = sizeBytes,
+                ["sha256"] = sha256,
+                ["export_rooms"] = exportRooms,
+                ["space_boundary_level"] = sbLevel,
+                ["export_revit_property_sets"] = exportRevitPsets,
+                ["export_ifc_common_property_sets"] = exportCommonPsets,
+                ["ifc_space_count"] = ifcSpaceCount,
+                ["ifc_property_set_count"] = ifcPsetCount,
+                ["warnings"] = warnings
+            }, $"Delivered IFC '{name}' ({sizeBytes / 1024} KB, {ifcSpaceCount} IfcSpace, {ifcPsetCount} IfcPropertySet).");
         }
     }
 
