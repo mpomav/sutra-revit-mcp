@@ -1,0 +1,91 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Sutra â€” AutoCAD & Civil 3D MCP add-in (Scio.Cad).
+    Mirrors Scio.Revit's multi-year single-project design:
+      2023-2024  .NET Framework 4.8   net48
+      2025-2026  .NET 8               net8.0-windows7.0
+
+    AutoCAD managed assemblies (accoremgd, acdbmgd, acmgd, AdWindows) are
+    referenced with Private=false; AutoCAD/Civil 3D provides them at load time.
+    Civil 3D (AeccDbMgd.dll) is detected and invoked dynamically at runtime so
+    the exact same binary loads cleanly in both plain AutoCAD and Civil 3D.
+  -->
+  <PropertyGroup>
+    <CadYear Condition="'$(CadYear)' == ''">2025</CadYear>
+    <CadDir Condition="'$(CadDir)' == ''">C:\Program Files\Autodesk\AutoCAD $(CadYear)</CadDir>
+    <_CadRuntimeConfigPath Condition="Exists('$(CadDir)\acdbmgd.runtimeconfig.json')">$(CadDir)\acdbmgd.runtimeconfig.json</_CadRuntimeConfigPath>
+    <_CadRuntimeConfigPath Condition="'$(_CadRuntimeConfigPath)' == '' and Exists('$(CadDir)\acad.runtimeconfig.json')">$(CadDir)\acad.runtimeconfig.json</_CadRuntimeConfigPath>
+    <_CadRuntimeConfigText Condition="$(CadYear) &gt;= 2025 and '$(_CadRuntimeConfigPath)' != ''">$([System.IO.File]::ReadAllText('$(_CadRuntimeConfigPath)'))</_CadRuntimeConfigText>
+    <CadUsesNet10 Condition="'$(CadUsesNet10)' == '' and $(CadYear) &gt;= 2027">true</CadUsesNet10>
+    <CadUsesNet10 Condition="'$(CadUsesNet10)' == '' and $(_CadRuntimeConfigText.Contains('net10.0'))">true</CadUsesNet10>
+    <CadUsesNet10 Condition="'$(CadUsesNet10)' == '' and $(_CadRuntimeConfigText.Contains('10.0'))">true</CadUsesNet10>
+    <CadUsesNet10 Condition="'$(CadUsesNet10)' == ''">false</CadUsesNet10>
+    <TargetFramework Condition="$(CadYear) &lt;= 2024">net48</TargetFramework>
+    <TargetFramework Condition="$(CadYear) &gt;= 2025 and '$(CadUsesNet10)' != 'true'">net8.0-windows7.0</TargetFramework>
+    <TargetFramework Condition="$(CadYear) &gt;= 2025 and '$(CadUsesNet10)' == 'true'">net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>Scio.Cad</AssemblyName>
+    <RootNamespace>Scio.Cad</RootNamespace>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <DefineConstants>ACAD$(CadYear)</DefineConstants>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+    <Deterministic>true</Deterministic>
+    <DeterministicSourcePaths>true</DeterministicSourcePaths>
+    <EnableSourceLink>false</EnableSourceLink>
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="ScioCadYear" Value="$(CadYear)" />
+    <SourceRoot Include="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" Condition="'$(TargetFramework)' == 'net48'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="accoremgd">
+      <HintPath>$(CadDir)\accoremgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="acdbmgd">
+      <HintPath>$(CadDir)\acdbmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="acmgd">
+      <HintPath>$(CadDir)\acmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AdWindows">
+      <HintPath>$(CadDir)\AdWindows.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Shared helpers live in Shared\ (auto-included by SDK-style glob) -->
+
+  <!-- Official Sutra icons embedded directly so Scio.Cad.dll is 100% self-contained. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Icons\status16.png" LogicalName="Scio.Cad.Icons.status16.png" />
+    <EmbeddedResource Include="Icons\status32.png" LogicalName="Scio.Cad.Icons.status32.png" />
+    <EmbeddedResource Include="Icons\connect16.png" LogicalName="Scio.Cad.Icons.connect16.png" />
+    <EmbeddedResource Include="Icons\connect32.png" LogicalName="Scio.Cad.Icons.connect32.png" />
+    <EmbeddedResource Include="Icons\audit16.png" LogicalName="Scio.Cad.Icons.audit16.png" />
+    <EmbeddedResource Include="Icons\audit32.png" LogicalName="Scio.Cad.Icons.audit32.png" />
+    <EmbeddedResource Include="Icons\censo16.png" LogicalName="Scio.Cad.Icons.censo16.png" />
+    <EmbeddedResource Include="Icons\censo32.png" LogicalName="Scio.Cad.Icons.censo32.png" />
+    <EmbeddedResource Include="Icons\metrado16.png" LogicalName="Scio.Cad.Icons.metrado16.png" />
+    <EmbeddedResource Include="Icons\metrado32.png" LogicalName="Scio.Cad.Icons.metrado32.png" />
+    <EmbeddedResource Include="Icons\salidas16.png" LogicalName="Scio.Cad.Icons.salidas16.png" />
+    <EmbeddedResource Include="Icons\salidas32.png" LogicalName="Scio.Cad.Icons.salidas32.png" />
+  </ItemGroup>
+
+</Project>
+

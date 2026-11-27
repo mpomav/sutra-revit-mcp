@@ -23,6 +23,8 @@ namespace Scio.Server
 
         public string? PinnedPipeName { get; set; }
         public int? PreferredRevitYear { get; set; }
+        public string? PinnedHost { get; set; }
+        public int? PinnedCadPid { get; set; }
         public PermissionProfile PermissionProfile { get; set; } = PermissionProfile.SafeWrite;
         public HashSet<string> ActivePacks { get; set; } = ToolPackResolver.ResolveActivePacks(null);
         public string SchemaMode { get; set; } = "codemode";
@@ -76,12 +78,14 @@ namespace Scio.Server
                     return 0;
                 }
 
-                // Clear stale remote descriptors only when switching from a previous live Revit pipe to a different one
+                // Clear stale remote Revit descriptors only when switching from a previous live Revit pipe to a different one
                 if (!string.IsNullOrEmpty(_lastHydratedPipe) &&
                     !string.Equals(pipeName, _lastHydratedPipe, StringComparison.Ordinal))
                 {
                     var staleRemote = _descriptors.Values
-                        .Where(d => !d.ServerSide && !string.Equals(d.Name, "scio_health", StringComparison.Ordinal))
+                        .Where(d => !d.ServerSide &&
+                                    !string.Equals(d.TargetHost, "cad", StringComparison.OrdinalIgnoreCase) &&
+                                    !string.Equals(d.Name, "scio_health", StringComparison.Ordinal))
                         .Select(d => d.Name)
                         .ToList();
                     foreach (string name in staleRemote)
@@ -206,6 +210,46 @@ namespace Scio.Server
                 return response;
             }
 
+            bool routeToCad =
+                (_descriptors.TryGetValue(request.Tool, out var targetDesc) &&
+                 string.Equals(targetDesc.TargetHost, "cad", StringComparison.OrdinalIgnoreCase)) ||
+                (string.Equals(request.Tool, "scio_health", StringComparison.Ordinal) &&
+                 (PinnedCadPid.HasValue || IsCadHostFilter(PinnedHost)));
+
+            if (routeToCad)
+            {
+                var cadBeacon = ResolveCadTarget(out string? cadRefusal);
+                if (cadRefusal != null)
+                {
+                    response = ToolResponse.Refusal(request.RequestId, "ambiguous_cad_session", cadRefusal);
+                    sw.Stop();
+                    TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+                    TelemetryTool.RecordToolCall(request.Tool, false, sw.ElapsedMilliseconds, SchemaMode);
+                    return response;
+                }
+                if (cadBeacon == null)
+                {
+                    response = ToolResponse.Failure(
+                        request.RequestId,
+                        "no_cad_session",
+                        "No running AutoCAD / Civil 3D session with Sutra CAD loaded was found. Open AutoCAD or Civil 3D first.");
+                    sw.Stop();
+                    TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+                    TelemetryTool.RecordToolCall(request.Tool, false, sw.ElapsedMilliseconds, SchemaMode);
+                    return response;
+                }
+
+                string wireCmd = _descriptors.TryGetValue(request.Tool, out var cd) && !string.IsNullOrWhiteSpace(cd.RemoteCommand)
+                    ? cd.RemoteCommand!
+                    : request.Tool;
+                var cadClient = new CadPipeClient(cadBeacon);
+                response = await cadClient.SendAsync(wireCmd, request, connectTimeoutMs: 5000, ct: ct).ConfigureAwait(false);
+                sw.Stop();
+                TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
+                TelemetryTool.RecordToolCall(request.Tool, response.Ok, sw.ElapsedMilliseconds, SchemaMode);
+                return response;
+            }
+
             string? pipeName = ResolveTargetPipe();
             if (string.IsNullOrWhiteSpace(pipeName))
             {
@@ -225,6 +269,46 @@ namespace Scio.Server
             TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
             TelemetryTool.RecordToolCall(request.Tool, response.Ok, sw.ElapsedMilliseconds, SchemaMode);
             return response;
+        }
+
+        public static bool IsCadHostFilter(string? host) =>
+            string.Equals(host, "cad", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(host, "autocad", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(host, "civil3d", StringComparison.OrdinalIgnoreCase);
+
+        public CadSessionBeacon? ResolveCadTarget(out string? refusal, string? explicitHostFilter = null)
+        {
+            refusal = null;
+            var sessions = CadSessionRegistry.DiscoverLiveCadSessions();
+            if (sessions.Count == 0) return null;
+
+            string? filter = !string.IsNullOrWhiteSpace(explicitHostFilter)
+                ? explicitHostFilter
+                : (IsCadHostFilter(PinnedHost) ? PinnedHost : "cad");
+
+            if (PinnedCadPid.HasValue)
+            {
+                var byPid = sessions.FirstOrDefault(s => s.Pid == PinnedCadPid.Value);
+                if (byPid == null)
+                {
+                    refusal = $"Pinned CAD process ID {PinnedCadPid.Value} is no longer running. Call scio_target with clear=true or host='auto'.";
+                    return null;
+                }
+                if (!byPid.MatchesHost(filter))
+                {
+                    refusal = $"Pinned CAD process ID {PinnedCadPid.Value} is {byPid.DisplayHost}, which does not match host filter '{filter}'.";
+                    return null;
+                }
+                return byPid;
+            }
+
+            var matching = sessions.Where(s => s.MatchesHost(filter)).ToList();
+            if (matching.Count == 0) return null;
+            if (matching.Count == 1) return matching[0];
+
+            string names = string.Join(", ", matching.Select(m => $"{m.DisplayHost} {m.EffectiveYear} (pid {m.Pid})"));
+            refusal = $"{matching.Count} CAD sessions are running ({names}). Call scio_target with a specific pid or host ('autocad' / 'civil3d') to choose one.";
+            return null;
         }
 
         public string? ResolveTargetPipe()

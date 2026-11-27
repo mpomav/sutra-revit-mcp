@@ -185,6 +185,12 @@ namespace Scio.Abstractions
         [JsonProperty("server_side")]
         public bool ServerSide { get; set; }
 
+        [JsonProperty("target_host", NullValueHandling = NullValueHandling.Ignore)]
+        public string TargetHost { get; set; } = "revit";
+
+        [JsonProperty("remote_command", NullValueHandling = NullValueHandling.Ignore)]
+        public string? RemoteCommand { get; set; }
+
         [JsonProperty("input_schema")]
         public JObject InputSchema { get; set; } = new JObject
         {

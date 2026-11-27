@@ -37,6 +37,15 @@ namespace Scio.Ipc
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Scio", "RevitMcpV4", "sessions");
 
+        /// <summary>Optional test hook overriding the Revit sessions directory.</summary>
+        public static string? DirectoryOverride { get; set; }
+
+        /// <summary>Optional test hook overriding PID liveness checks.</summary>
+        public static Func<int, bool>? LivenessProbe { get; set; }
+
+        private static string EffectiveDirectory =>
+            !string.IsNullOrWhiteSpace(DirectoryOverride) ? DirectoryOverride! : SessionsDirectory;
+
         public static string BuildPipeName(int revitYear, int pid)
         {
             string user = Environment.UserName ?? "user";
@@ -68,9 +77,10 @@ namespace Scio.Ipc
         public static List<RevitSessionBeacon> DiscoverLiveSessions()
         {
             var live = new List<RevitSessionBeacon>();
-            if (!Directory.Exists(SessionsDirectory)) return live;
+            string dir = EffectiveDirectory;
+            if (!Directory.Exists(dir)) return live;
 
-            foreach (string file in Directory.GetFiles(SessionsDirectory, "revit-*.json"))
+            foreach (string file in Directory.GetFiles(dir, "revit-*.json"))
             {
                 try
                 {
@@ -97,6 +107,7 @@ namespace Scio.Ipc
 
         private static bool IsProcessAlive(int pid)
         {
+            if (LivenessProbe != null) return LivenessProbe(pid);
             if (pid <= 0) return false;
             try
             {

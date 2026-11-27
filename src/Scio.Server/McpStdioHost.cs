@@ -75,15 +75,21 @@ namespace Scio.Server
                 {
                     Name = "scio_target",
                     Pack = "core",
-                    Description = "List active Revit v4 sessions or pin a specific Revit year/PID for subsequent tool calls.",
+                    Description = "List active Revit and AutoCAD/Civil 3D sessions or pin a specific host, Revit year, or PID for subsequent tool calls.",
                     ReadOnly = true,
                     InputSchema = new JObject
                     {
                         ["type"] = "object",
                         ["properties"] = new JObject
                         {
+                            ["host"] = new JObject
+                            {
+                                ["type"] = "string",
+                                ["enum"] = new JArray("revit", "autocad", "civil3d", "cad", "auto"),
+                                ["description"] = "Optional desktop host to pin ('revit', 'autocad', 'civil3d', 'cad') or 'auto' to clear."
+                            },
                             ["revit_year"] = new JObject { ["type"] = "integer", ["description"] = "Optional Revit year (2023-2027) to target." },
-                            ["pid"] = new JObject { ["type"] = "integer", ["description"] = "Optional Revit process ID to pin." },
+                            ["pid"] = new JObject { ["type"] = "integer", ["description"] = "Optional Revit or AutoCAD/Civil 3D process ID to pin." },
                             ["clear"] = new JObject { ["type"] = "boolean", ["description"] = "Clear any pinned session and return to auto-discovery." }
                         },
                         ["additionalProperties"] = false
@@ -91,12 +97,17 @@ namespace Scio.Server
                 },
                 async (req, ct) =>
                 {
-                    var sessions = SessionRegistry.DiscoverLiveSessions();
+                    var revitSessions = SessionRegistry.DiscoverLiveSessions();
+                    var cadSessions = CadSessionRegistry.DiscoverLiveCadSessions();
                     bool targetChanged = false;
-                    if (req.Arguments.Value<bool?>("clear") == true)
+
+                    string? hostArg = req.Arguments.Value<string>("host")?.Trim().ToLowerInvariant();
+                    if (req.Arguments.Value<bool?>("clear") == true || hostArg == "auto")
                     {
                         _registry.PinnedPipeName = null;
                         _registry.PreferredRevitYear = null;
+                        _registry.PinnedHost = null;
+                        _registry.PinnedCadPid = null;
                         targetChanged = true;
                     }
                     else
@@ -105,29 +116,70 @@ namespace Scio.Server
                         int? pid = req.Arguments.Value<int?>("pid");
                         if (pid.HasValue)
                         {
-                            var byPid = sessions.FirstOrDefault(s => s.Pid == pid.Value);
-                            if (byPid == null)
-                                return ToolResponse.Refusal(req.RequestId, "session_not_found", $"No live Revit v4 session with PID {pid.Value}.");
-                            _registry.PinnedPipeName = byPid.PipeName;
-                            targetChanged = true;
+                            var byRevitPid = revitSessions.FirstOrDefault(s => s.Pid == pid.Value);
+                            var byCadPid = cadSessions.FirstOrDefault(s => s.Pid == pid.Value);
+                            if (byRevitPid != null)
+                            {
+                                _registry.PinnedPipeName = byRevitPid.PipeName;
+                                _registry.PinnedHost = "revit";
+                                _registry.PinnedCadPid = null;
+                                targetChanged = true;
+                            }
+                            else if (byCadPid != null)
+                            {
+                                _registry.PinnedCadPid = byCadPid.Pid;
+                                _registry.PinnedHost = byCadPid.Host;
+                                _registry.PinnedPipeName = null;
+                                targetChanged = true;
+                            }
+                            else
+                            {
+                                return ToolResponse.Refusal(req.RequestId, "session_not_found", $"No live Revit or AutoCAD/Civil 3D session with PID {pid.Value}.");
+                            }
+                        }
+                        else if (!string.IsNullOrWhiteSpace(hostArg))
+                        {
+                            if (ServerToolRegistry.IsCadHostFilter(hostArg))
+                            {
+                                var matchingCad = cadSessions.Where(c => c.MatchesHost(hostArg)).ToList();
+                                if (matchingCad.Count == 0)
+                                    return ToolResponse.Refusal(req.RequestId, "session_not_found", $"No live '{hostArg}' session found.");
+                                _registry.PinnedHost = hostArg;
+                                _registry.PinnedCadPid = matchingCad.Count == 1 ? matchingCad[0].Pid : (int?)null;
+                                targetChanged = true;
+                            }
+                            else if (hostArg == "revit")
+                            {
+                                _registry.PinnedHost = "revit";
+                                _registry.PinnedCadPid = null;
+                                targetChanged = true;
+                            }
                         }
                         else if (year.HasValue)
                         {
                             _registry.PreferredRevitYear = year.Value;
                             _registry.PinnedPipeName = null;
+                            _registry.PinnedHost = "revit";
+                            _registry.PinnedCadPid = null;
                             targetChanged = true;
                         }
                     }
 
                     await _registry.HydrateRemoteCatalogAsync(ct, force: targetChanged).ConfigureAwait(false);
 
+                    var activeCad = _registry.ResolveCadTarget(out _);
                     var data = new JObject
                     {
                         ["active_pipe"] = _registry.ResolveTargetPipe(),
+                        ["active_cad_pipe"] = activeCad?.PipeName,
+                        ["pinned_host"] = _registry.PinnedHost,
+                        ["pinned_cad_pid"] = _registry.PinnedCadPid,
                         ["preferred_year"] = _registry.PreferredRevitYear,
-                        ["sessions"] = JArray.FromObject(sessions)
+                        ["targets_found"] = revitSessions.Count + cadSessions.Count,
+                        ["sessions"] = JArray.FromObject(revitSessions),
+                        ["cad_sessions"] = JArray.FromObject(cadSessions)
                     };
-                    return ToolResponse.Success(req.RequestId, data, $"Found {sessions.Count} live Revit v4 session(s).");
+                    return ToolResponse.Success(req.RequestId, data, $"Found {revitSessions.Count} Revit and {cadSessions.Count} CAD session(s).");
                 });
 
             _registry.RegisterServerTool(
@@ -135,6 +187,7 @@ namespace Scio.Server
                 (req, ct) => CodeModeTool.ExecuteAsync(_registry, req, ct));
 
             LocalToolsRegistrar.RegisterAll(_registry);
+            CadToolsRegistrar.RegisterAll(_registry);
 
             _registry.RegisterRemoteTool(new ToolDescriptor
             {
