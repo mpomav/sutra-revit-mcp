@@ -12,6 +12,6 @@
 
   <ItemGroup>
     <PackageReference Include="IronPython" Version="3.4.2" />
-    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" Condition="'$(TargetFramework)' == 'net8.0-windows'" />
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" Condition="'$(TargetFramework)' != 'net48'" />
   </ItemGroup>
 </Project>

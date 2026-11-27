@@ -35,12 +35,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Scio.Server build failed." }
 
     foreach ($yr in $Years) {
+        $tfm = if ($yr -le 2024) { "net48" } elseif ($yr -le 2026) { "net8.0-windows" } else { "net10.0-windows" }
         $apiDll = "C:\Program Files\Autodesk\Revit $yr\RevitAPI.dll"
-        if (-not (Test-Path $apiDll)) {
-            Write-Host "Skipping Revit $yr (not installed)." -ForegroundColor Yellow
-            continue
-        }
-        Write-Host "=== Building Revit $yr payload ($Configuration, $($RevitProjects.Count) projects) ===" -ForegroundColor Cyan
+        $apiSource = if ($tfm -eq "net8.0-windows") { "Nice3point.Revit.Api net8 universal" } elseif (Test-Path $apiDll) { "local RevitAPI.dll" } else { "Nice3point.Revit.Api NuGet" }
+        Write-Host "=== Building Revit $yr payload ($Configuration, $tfm, $apiSource, $($RevitProjects.Count) projects) ===" -ForegroundColor Cyan
         foreach ($proj in $RevitProjects) {
             dotnet build $proj -p:RevitYear=$yr -c $Configuration --nologo -v quiet
             if ($LASTEXITCODE -ne 0) { throw "$proj build failed for Revit $yr." }

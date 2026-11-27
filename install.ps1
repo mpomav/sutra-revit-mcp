@@ -7,7 +7,8 @@
 [CmdletBinding()]
 param(
     [int[]]$Years = @(2023, 2024, 2025, 2026, 2027),
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [switch]$SkipMcpConfig
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,19 +21,20 @@ if (Get-Process -Name "Revit" -ErrorAction SilentlyContinue) {
 # Stop any idle scio-revit-mcp server process before replacing binaries
 Get-Process -Name "scio-revit-mcp" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-Write-Host "=== Building Scio.Server ($Configuration) ===" -ForegroundColor Cyan
-dotnet build (Join-Path $RepoRoot "src\Scio.Server\Scio.Server.csproj") -c $Configuration --nologo -v minimal
-if ($LASTEXITCODE -ne 0) { throw "Scio.Server build failed." }
-
 $ServerDst = Join-Path $env:LOCALAPPDATA "Programs\Scio\MCP\server"
 if (Test-Path $ServerDst) { Remove-Item -Path $ServerDst -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $ServerDst | Out-Null
-Copy-Item -Path (Join-Path $RepoRoot "src\Scio.Server\bin\$Configuration\net8.0\*") -Destination $ServerDst -Recurse -Force
+
+Write-Host "=== Publishing self-contained Scio.Server ($Configuration, win-x64) ===" -ForegroundColor Cyan
+dotnet publish (Join-Path $RepoRoot "src\Scio.Server\Scio.Server.csproj") -c $Configuration -r win-x64 --self-contained true `
+    -p:PublishSingleFile=false -p:PublishTrimmed=false -o $ServerDst --nologo -v minimal
+if ($LASTEXITCODE -ne 0) { throw "Scio.Server publish failed." }
 $ServerExe = Join-Path $ServerDst "scio-revit-mcp.exe"
 
 $RevitProjects = @(
     "src\Scio.Revit.Host\Scio.Revit.Host.csproj",
     "src\Scio.Revit.Python\Scio.Revit.Python.csproj",
+    "src\Scio.Revit.CSharp\Scio.Revit.CSharp.csproj",
     "src\Scio.Revit.Ui\Scio.Revit.Ui.csproj",
     "src\Modules\Scio.Module.CoreRead\Scio.Module.CoreRead.csproj",
     "src\Modules\Scio.Module.ScioNative\Scio.Module.ScioNative.csproj",
@@ -45,14 +47,40 @@ $RevitProjects = @(
     "src\Modules\Scio.Module.IsoInterop\Scio.Module.IsoInterop.csproj"
 )
 
+function Find-RevitInstallDir {
+    param([int]$Year)
+    $defaultDir = "C:\Program Files\Autodesk\Revit $Year"
+    if (Test-Path (Join-Path $defaultDir "RevitAPI.dll")) { return $defaultDir }
+
+    $regRoot = "HKLM:\SOFTWARE\Autodesk\Revit\$Year"
+    if (Test-Path $regRoot) {
+        foreach ($sub in (Get-ChildItem -Path $regRoot -ErrorAction SilentlyContinue)) {
+            $loc = (Get-ItemProperty -Path $sub.PSPath -Name "InstallationLocation" -ErrorAction SilentlyContinue).InstallationLocation
+            if ($loc -and (Test-Path (Join-Path $loc "RevitAPI.dll"))) { return $loc.TrimEnd('\') }
+        }
+    }
+    return $null
+}
+
+function Test-RevitYearInstalled {
+    param([int]$Year)
+    if (Find-RevitInstallDir -Year $Year) { return $true }
+    if (Test-Path (Join-Path $env:ProgramData "Autodesk\Revit\Addins\$Year")) { return $true }
+    if (Test-Path (Join-Path $env:APPDATA "Autodesk\Revit\Addins\$Year")) { return $true }
+    return $false
+}
+
 $InstalledYears = @()
 foreach ($yr in $Years) {
-    if (-not (Test-Path "C:\Program Files\Autodesk\Revit $yr\RevitAPI.dll")) { continue }
-    $tfm = if ($yr -le 2024) { "net48" } else { "net10.0-windows" }
+    if (-not (Test-RevitYearInstalled -Year $yr)) { continue }
+    $tfm = if ($yr -le 2024) { "net48" } elseif ($yr -le 2026) { "net8.0-windows" } else { "net10.0-windows" }
+    $installDir = Find-RevitInstallDir -Year $yr
+    $extraProps = @("-p:RevitYear=$yr")
+    if ($installDir) { $extraProps += "-p:RevitInstallDir=$installDir" }
 
     Write-Host "=== Building & Installing Revit $yr ($tfm) ===" -ForegroundColor Cyan
     foreach ($proj in $RevitProjects) {
-        dotnet build (Join-Path $RepoRoot $proj) -p:RevitYear=$yr -c $Configuration --nologo -v quiet
+        dotnet build (Join-Path $RepoRoot $proj) @extraProps -c $Configuration --nologo -v quiet
         if ($LASTEXITCODE -ne 0) { throw "$proj build failed for Revit $yr." }
     }
 
@@ -89,6 +117,14 @@ foreach ($yr in $Years) {
     Set-Content -Path (Join-Path $addinRoot "ScioRevitMcp.addin") -Value $manifest -Encoding UTF8
     $InstalledYears += $yr
     Write-Host "  Installed Revit $yr -> $payloadDir" -ForegroundColor Green
+}
+
+if (-not $SkipMcpConfig) {
+    $cfgScript = Join-Path $RepoRoot "scripts\configure-mcp-clients.ps1"
+    if (Test-Path $cfgScript) {
+        Write-Host "=== Configuring detected AI clients (MCP) ===" -ForegroundColor Cyan
+        & $cfgScript -ServerExe $ServerExe -AutoDetect
+    }
 }
 
 Write-Host ""

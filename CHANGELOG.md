@@ -25,6 +25,11 @@ Clean-room expansion adding structural view planning, web-ready 3D mesh export (
 - **IFC Delivery Fix (`scio_deliver_ifc`):** added `export_rooms` (`SpaceBoundaryLevel` + `ExportRoomsInView=true`, default `true`), `export_revit_property_sets` (`ExportInternalRevitPropertySets=true`, default `true` so `Comments` and `Mark` export to IFC), `export_ifc_common_property_sets`, `view_id`, and post-export `ifc_space_count` / `ifc_property_set_count` verification.
 - **Claude Desktop (Microsoft Store / MSIX) MCP Fix:** `scripts/configure-mcp-clients.ps1` now configures every `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\claude_desktop_config.json` (creating parent folders if needed) alongside `%APPDATA%\Claude`, and `SessionRegistry` now publishes and discovers Revit session beacons under `%USERPROFILE%\.scio\v4\sessions` (unaffected by MSIX `%LOCALAPPDATA%` virtualization) with backward-compatible fallback.
 - **In-App Update Alerts (`SutraUpdateChecker` & `UpdateAvailableDialog`):** non-blocking 24h-cached GitHub Releases check on Revit startup, manual "Buscar actualizaciones" button in `AboutDialog`, and cached `update_available` metadata in `scio_health`.
+- **True Multi-Year Revit 2023–2027 Build & Installer Parity (#2):**
+  - Fixed target framework mapping in `src/RevitCommon.props`, `build/pack-release.ps1`, `build/build-all.ps1`, and `install.ps1`: `net48` (2023–2024), `net8.0-windows` (2025–2026), and `net10.0-windows` (2027).
+  - Added automatic `Nice3point.Revit.Api.RevitAPI/RevitAPIUI` NuGet fallback when local `RevitAPI.dll` is absent, plus a GitHub Actions `build-revit-matrix` (2023–2027) in `.github/workflows/ci.yml`.
+  - Updated `build/sutra-revit-mcp.iss` and `install.ps1` to detect Revit installed on any drive (Registry `HKLM64` + `ProgramData`/`AppData` Addins), publish self-contained `Scio.Server`, include `Scio.Revit.CSharp`, and auto-configure MCP clients.
+  - Aligned `claude mcp add --scope user scio-revit` in `README.md` and `README.es.md`.
 
 ## v1.2.0 (2026-11-26)
 

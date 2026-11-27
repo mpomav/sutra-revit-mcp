@@ -35,3 +35,24 @@ jobs:
       - name: Clean-room audit
         shell: pwsh
         run: pwsh -File build/audit-clean-room.ps1
+
+  build-revit-matrix:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        revit_year: [2023, 2024, 2025, 2026, 2027]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build Revit ${{ matrix.revit_year }} payload
+        shell: pwsh
+        run: pwsh -File build/build-all.ps1 -Years ${{ matrix.revit_year }} -SkipTests

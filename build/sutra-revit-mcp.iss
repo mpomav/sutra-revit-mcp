@@ -206,12 +206,51 @@ begin
   end;
 end;
 
+function IsRevitYearInstalled(const YearStr: string): Boolean;
+var
+  Subkeys: TArrayOfString;
+  I: Integer;
+  RegRoot, InstallLoc: string;
+begin
+  Result := False;
+
+  { 1. Default Program Files installation }
+  if FileExists('C:\Program Files\Autodesk\Revit ' + YearStr + '\RevitAPI.dll') then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  { 2. Any custom drive/location registered by Autodesk Revit in HKLM }
+  RegRoot := 'SOFTWARE\Autodesk\Revit\' + YearStr;
+  if RegGetSubkeyNames(HKLM64, RegRoot, Subkeys) then
+  begin
+    for I := 0 to GetArrayLength(Subkeys) - 1 do
+    begin
+      if RegQueryStringValue(HKLM64, RegRoot + '\' + Subkeys[I], 'InstallationLocation', InstallLoc) and
+         (InstallLoc <> '') and
+         FileExists(AddBackslash(InstallLoc) + 'RevitAPI.dll') then
+      begin
+        Result := True;
+        Exit;
+      end;
+    end;
+  end;
+
+  { 3. Autodesk Revit Addins folders created on install regardless of target drive }
+  if DirExists(ExpandConstant('{commonappdata}\Autodesk\Revit\Addins\') + YearStr) or
+     DirExists(ExpandConstant('{userappdata}\Autodesk\Revit\Addins\') + YearStr) then
+  begin
+    Result := True;
+    Exit;
+  end;
+end;
+
 procedure DeployRevitYear(const YearStr: string);
 var
-  RevitApiPath, SrcDir, AddinRoot, PayloadDir, OldManifest, ManifestPath, ManifestXml: string;
+  SrcDir, AddinRoot, PayloadDir, OldManifest, ManifestPath, ManifestXml: string;
 begin
-  RevitApiPath := 'C:\Program Files\Autodesk\Revit ' + YearStr + '\RevitAPI.dll';
-  if not FileExists(RevitApiPath) then
+  if not IsRevitYearInstalled(YearStr) then
     Exit;
 
   SrcDir := ExpandConstant('{tmp}\SutraAddins\') + YearStr;

@@ -62,13 +62,10 @@ try {
 
     $BuiltYears = @()
     foreach ($yr in $Years) {
+        $tfm = if ($yr -le 2024) { "net48" } elseif ($yr -le 2026) { "net8.0-windows" } else { "net10.0-windows" }
         $apiDll = "C:\Program Files\Autodesk\Revit $yr\RevitAPI.dll"
-        if (-not (Test-Path $apiDll)) {
-            Write-Host "  Skipping Revit $yr (not installed)." -ForegroundColor Yellow
-            continue
-        }
-        $tfm = if ($yr -le 2024) { "net48" } else { "net10.0-windows" }
-        Write-Host "=== Building & staging Revit $yr ($tfm) ===" -ForegroundColor Cyan
+        $apiSource = if ($tfm -eq "net8.0-windows") { "Nice3point.Revit.Api net8 universal" } elseif (Test-Path $apiDll) { "local RevitAPI.dll" } else { "Nice3point.Revit.Api NuGet" }
+        Write-Host "=== Building & staging Revit $yr ($tfm · $apiSource) ===" -ForegroundColor Cyan
         $yearOut = Join-Path $AddinsStage "$yr"
         New-Item -ItemType Directory -Force -Path $yearOut | Out-Null
 

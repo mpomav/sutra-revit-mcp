@@ -76,7 +76,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 ### Connect your AI client
 ```powershell
 # Claude Code
-claude mcp add --scope user sutra-revit -- "C:\Users\<you>\AppData\Local\Programs\Scio\MCP\server\scio-revit-mcp.exe"
+claude mcp add --scope user scio-revit -- "C:\Users\<you>\AppData\Local\Programs\Scio\MCP\server\scio-revit-mcp.exe"
 ```
 
 ---

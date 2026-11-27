@@ -2,6 +2,7 @@
   <PropertyGroup>
     <RevitYear Condition="'$(RevitYear)' == ''">2026</RevitYear>
     <RevitTargetFramework Condition="'$(RevitTargetFramework)' == '' and ('$(RevitYear)' == '2023' or '$(RevitYear)' == '2024')">net48</RevitTargetFramework>
+    <RevitTargetFramework Condition="'$(RevitTargetFramework)' == '' and ('$(RevitYear)' == '2025' or '$(RevitYear)' == '2026')">net8.0-windows</RevitTargetFramework>
     <RevitTargetFramework Condition="'$(RevitTargetFramework)' == ''">net10.0-windows</RevitTargetFramework>
     <TargetFramework>$(RevitTargetFramework)</TargetFramework>
     <PlatformTarget>x64</PlatformTarget>
@@ -9,14 +10,26 @@
     <DefineConstants Condition="'$(RevitYear)' != '2023'">$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
     <DefineConstants Condition="'$(RevitYear)' != '2023' and '$(RevitYear)' != '2024'">$(DefineConstants);REVIT2025_OR_GREATER</DefineConstants>
     <DefineConstants Condition="'$(RevitYear)' != '2023' and '$(RevitYear)' != '2024' and '$(RevitYear)' != '2025'">$(DefineConstants);REVIT2026_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitYear)' != '2023' and '$(RevitYear)' != '2024' and '$(RevitYear)' != '2025' and '$(RevitYear)' != '2026'">$(DefineConstants);REVIT2027_OR_GREATER</DefineConstants>
     <RevitInstallDir Condition="'$(RevitInstallDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitYear)</RevitInstallDir>
+    <!--
+      Revit 2025.0-2025.4 and 2026.0-2026.4 run on .NET 8 (net8.0-windows), while Revit 2025.5/2026.5 migrated to .NET 10.
+      A net8.0-windows add-in loads cleanly on BOTH .NET 8 and .NET 10 Revit hosts, whereas a net10.0-windows add-in fails
+      on .NET 8 hosts. On machines with Revit 2025.5/2026.5 installed, local RevitAPI.dll references System.Runtime 10.0.0.0
+      (CS1705 under net8.0-windows), so for net8.0-windows we compile against Nice3point.Revit.Api (2025.4.* / 2026.4.*).
+    -->
+    <Nice3pointRevitVersion Condition="'$(RevitYear)' == '2025'">2025.4.*</Nice3pointRevitVersion>
+    <Nice3pointRevitVersion Condition="'$(RevitYear)' == '2026'">2026.4.*</Nice3pointRevitVersion>
+    <Nice3pointRevitVersion Condition="'$(Nice3pointRevitVersion)' == ''">$(RevitYear).*</Nice3pointRevitVersion>
+    <UseLocalRevitApi Condition="'$(UseLocalRevitApi)' == '' and '$(TargetFramework)' != 'net8.0-windows' and Exists('$(RevitInstallDir)\RevitAPI.dll') and Exists('$(RevitInstallDir)\RevitAPIUI.dll')">true</UseLocalRevitApi>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!-- Use local Revit installation assemblies when compatible; otherwise use Nice3point reference packages for universal net8.0 / CI builds. -->
+  <ItemGroup Condition="'$(UseLocalRevitApi)' == 'true'">
     <Reference Include="RevitAPI">
       <HintPath>$(RevitInstallDir)\RevitAPI.dll</HintPath>
       <Private>false</Private>
@@ -25,5 +38,10 @@
       <HintPath>$(RevitInstallDir)\RevitAPIUI.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLocalRevitApi)' != 'true'">
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(Nice3pointRevitVersion)" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(Nice3pointRevitVersion)" ExcludeAssets="runtime" />
   </ItemGroup>
 </Project>
