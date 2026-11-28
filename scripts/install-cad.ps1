@@ -34,18 +34,33 @@ $seriesMap = @{
     "2026" = @{ Min = "R25.1"; Max = "R25.1" }
 }
 
+function Find-CadInstallDir {
+    param([string]$Year, [string]$SeriesId)
+    $defaultDir = "C:\Program Files\Autodesk\AutoCAD $Year"
+    if (Test-Path (Join-Path $defaultDir "acdbmgd.dll")) { return $defaultDir }
+
+    $regRoot = "HKLM:\SOFTWARE\Autodesk\AutoCAD\$SeriesId"
+    if (Test-Path $regRoot) {
+        foreach ($sub in (Get-ChildItem -Path $regRoot -ErrorAction SilentlyContinue)) {
+            $loc = (Get-ItemProperty -Path $sub.PSPath -Name "AcadLocation" -ErrorAction SilentlyContinue).AcadLocation
+            if ($loc -and (Test-Path (Join-Path $loc "acdbmgd.dll"))) { return $loc.TrimEnd('\') }
+        }
+    }
+    return $null
+}
+
 $targetYears = @()
 if ($Years.Count -gt 0) {
     $targetYears = $Years
 } else {
     foreach ($y in $supportedYears) {
-        $dll = "C:\Program Files\Autodesk\AutoCAD $y\acdbmgd.dll"
-        if (Test-Path $dll) { $targetYears += $y }
+        $series = $seriesMap[$y]
+        if (Find-CadInstallDir -Year $y -SeriesId $series.Min) { $targetYears += $y }
     }
 }
 
 if ($targetYears.Count -eq 0) {
-    throw "No supported AutoCAD / Civil 3D (2023-2026) installation found under C:\Program Files\Autodesk\AutoCAD <year>."
+    throw "No supported AutoCAD / Civil 3D (2023-2026) installation found."
 }
 
 Write-Host "Sutra CAD Installer — detected years: $($targetYears -join ', ')" -ForegroundColor Cyan
@@ -54,9 +69,10 @@ $componentsXml = New-Object System.Text.StringBuilder
 New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
 
 foreach ($y in $targetYears) {
-    $cadDir = "C:\Program Files\Autodesk\AutoCAD $y"
-    if (-not (Test-Path (Join-Path $cadDir "acdbmgd.dll"))) {
-        throw "AutoCAD $y not found at $cadDir."
+    $series = $seriesMap[$y]
+    $cadDir = Find-CadInstallDir -Year $y -SeriesId $series.Min
+    if (-not $cadDir) {
+        $cadDir = "C:\Program Files\Autodesk\AutoCAD $y"
     }
 
     Write-Host "Building Scio.Cad for AutoCAD / Civil 3D $y..." -ForegroundColor Yellow

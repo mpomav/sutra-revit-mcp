@@ -244,6 +244,7 @@ namespace Scio.Server
                     : request.Tool;
                 var cadClient = new CadPipeClient(cadBeacon);
                 response = await cadClient.SendAsync(wireCmd, request, connectTimeoutMs: 5000, ct: ct).ConfigureAwait(false);
+                TryAutoIngest(request.Tool, response);
                 sw.Stop();
                 TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
                 TelemetryTool.RecordToolCall(request.Tool, response.Ok, sw.ElapsedMilliseconds, SchemaMode);
@@ -265,10 +266,27 @@ namespace Scio.Server
 
             var client = new ScioPipeClient(pipeName);
             response = await client.SendAsync(request, connectTimeoutMs: 5000, ct: ct).ConfigureAwait(false);
+            TryAutoIngest(request.Tool, response);
             sw.Stop();
             TraceRecorder.Record(request, response, sw.ElapsedMilliseconds);
             TelemetryTool.RecordToolCall(request.Tool, response.Ok, sw.ElapsedMilliseconds, SchemaMode);
             return response;
+        }
+
+        private static void TryAutoIngest(string toolName, ToolResponse response)
+        {
+            if (response == null || !response.Ok || response.Data == null) return;
+            if (!SqliteIngestor.ShouldIngest(toolName)) return;
+            try
+            {
+                string? modelName = (response.Data as JObject)?.Value<string>("drawing")
+                    ?? (response.Data as JObject)?.Value<string>("document")
+                    ?? (response.Data as JObject)?.Value<string>("model");
+                string? runId = SqliteIngestor.TryIngestResultSync(toolName, response.Data, modelName);
+                if (!string.IsNullOrWhiteSpace(runId) && response.Data is JObject obj)
+                    obj["sqlite_run_id"] = runId;
+            }
+            catch { }
         }
 
         public static bool IsCadHostFilter(string? host) =>

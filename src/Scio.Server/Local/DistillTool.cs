@@ -74,8 +74,11 @@ namespace Scio.Server
             int maxSessions = Math.Max(1, Math.Min(500, args?.Value<int?>("limit") ?? 100));
             var sessionIds = SessionTraceRecorder.ListSessionIds(tracesDir, maxSessions);
 
-            var toolStats = new Dictionary<string, (int Calls, int Failures, long TotalMs)>(StringComparer.Ordinal);
+            var toolStats = new Dictionary<string, (int Calls, int Failures, long TotalMs, long TotalReqBytes, long TotalRespBytes, long TotalEstTokens)>(StringComparer.Ordinal);
             var sequenceCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            long grandRespBytes = 0;
+            long grandEstTokens = 0;
+            long discoveryRespBytes = 0;
 
             foreach (string sid in sessionIds)
             {
@@ -89,8 +92,17 @@ namespace Scio.Server
 
                     bool ok = s.Value<bool?>("ok") ?? true;
                     long ms = s.Value<long?>("duration_ms") ?? 0;
+                    long reqB = s.Value<long?>("request_bytes") ?? 0;
+                    long respB = s.Value<long?>("response_bytes") ?? 0;
+                    long estTok = s.Value<long?>("est_tokens") ?? (respB > 0 ? (long)Math.Ceiling(respB / 3.5) : 0);
+
+                    grandRespBytes += respB;
+                    grandEstTokens += estTok;
+                    if (tool == "scio_list_tools" || tool == "scio_describe_tool" || tool == "scio_quantity_takeoff" || tool == "scio_context" || tool == "scio_audit_access")
+                        discoveryRespBytes += respB;
+
                     toolStats.TryGetValue(tool, out var cur);
-                    toolStats[tool] = (cur.Calls + 1, cur.Failures + (ok ? 0 : 1), cur.TotalMs + ms);
+                    toolStats[tool] = (cur.Calls + 1, cur.Failures + (ok ? 0 : 1), cur.TotalMs + ms, cur.TotalReqBytes + reqB, cur.TotalRespBytes + respB, cur.TotalEstTokens + estTok);
                 }
 
                 if (seqTools.Count >= 2)
@@ -110,7 +122,10 @@ namespace Scio.Server
                     ["calls"] = kv.Value.Calls,
                     ["failures"] = kv.Value.Failures,
                     ["failure_rate_pct"] = kv.Value.Calls > 0 ? Math.Round(100.0 * kv.Value.Failures / kv.Value.Calls, 1) : 0.0,
-                    ["avg_ms"] = kv.Value.Calls > 0 ? Math.Round((double)kv.Value.TotalMs / kv.Value.Calls, 1) : 0.0
+                    ["avg_ms"] = kv.Value.Calls > 0 ? Math.Round((double)kv.Value.TotalMs / kv.Value.Calls, 1) : 0.0,
+                    ["total_response_bytes"] = kv.Value.TotalRespBytes,
+                    ["avg_response_bytes"] = kv.Value.Calls > 0 ? Math.Round((double)kv.Value.TotalRespBytes / kv.Value.Calls, 0) : 0.0,
+                    ["est_tokens"] = kv.Value.TotalEstTokens
                 }));
 
             var polishPriority = new JArray(toolStats
@@ -123,7 +138,9 @@ namespace Scio.Server
                     ["tool"] = kv.Key,
                     ["calls"] = kv.Value.Calls,
                     ["failures"] = kv.Value.Failures,
-                    ["avg_ms"] = Math.Round((double)kv.Value.TotalMs / Math.Max(1, kv.Value.Calls), 1)
+                    ["avg_ms"] = Math.Round((double)kv.Value.TotalMs / Math.Max(1, kv.Value.Calls), 1),
+                    ["avg_response_bytes"] = Math.Round((double)kv.Value.TotalRespBytes / Math.Max(1, kv.Value.Calls), 0),
+                    ["est_tokens"] = kv.Value.TotalEstTokens
                 }));
 
             var distillCandidates = new JArray(sequenceCounts
@@ -141,6 +158,9 @@ namespace Scio.Server
             {
                 ["operation"] = "insights",
                 ["sessions_analyzed"] = sessionIds.Count,
+                ["total_response_bytes"] = grandRespBytes,
+                ["total_est_tokens"] = grandEstTokens,
+                ["discovery_bytes_pct"] = grandRespBytes > 0 ? Math.Round(100.0 * discoveryRespBytes / grandRespBytes, 1) : 0.0,
                 ["top_tools"] = topTools,
                 ["polish_priority"] = polishPriority,
                 ["distill_candidates"] = distillCandidates

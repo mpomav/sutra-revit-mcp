@@ -24,8 +24,11 @@ namespace Scio.Module.Modeling
         [ScioParam("new_type_name", "New type name for duplicate_type.")]
         public string NewTypeName { get; set; } = string.Empty;
 
-        [ScioParam("parameters", "Optional map of type parameter names -> values to apply after duplication.")]
+        [ScioParam("parameters", "Optional map of type parameter names -> values (or { value, unit }) to apply after duplication. Length numbers default to mm unless 'unit' is specified.")]
         public JObject? Parameters { get; set; }
+
+        [ScioParam("unit", "Default unit for numeric double parameters in 'parameters': 'auto' (default: Length=mm, Angle=deg, Area=m2, Volume=m3), 'mm', 'cm', 'm', 'ft', or 'deg'.")]
+        public string Unit { get; set; } = "auto";
 
         [ScioParam("dry_run", "Preview without committing (default true).")]
         public bool DryRun { get; set; } = true;
@@ -73,6 +76,8 @@ namespace Scio.Module.Modeling
                 return ToolResponse.Refusal(request.RequestId, "missing_name", "Provide 'new_type_name'.");
 
             var paramMap = request.Arguments["parameters"] as JObject;
+            string defaultUnit = (request.Arguments.Value<string>("unit") ?? "auto").Trim();
+            if (string.IsNullOrWhiteSpace(defaultUnit)) defaultUnit = "auto";
 
             return TransactionPipeline.RunVerified(
                 doc,
@@ -83,27 +88,76 @@ namespace Scio.Module.Modeling
                 {
                     ElementType dup = srcType.Duplicate(newName);
                     var applied = new JArray();
+                    var paramErrors = new JArray();
                     if (paramMap != null)
                     {
                         foreach (var prop in paramMap.Properties())
                         {
                             var p = RevitElementKit.FindParameter(dup, prop.Name);
-                            if (p != null && RevitElementKit.TrySetParameter(p, prop.Value, out _))
-                                applied.Add(prop.Name);
+                            if (p == null)
+                            {
+                                paramErrors.Add(new JObject { ["parameter"] = prop.Name, ["error"] = "Parameter not found." });
+                                continue;
+                            }
+                            JToken? valTok = prop.Value;
+                            string pUnit = defaultUnit;
+                            if (prop.Value is JObject specObj && specObj["value"] != null)
+                            {
+                                valTok = specObj["value"];
+                                pUnit = specObj.Value<string>("unit") ?? defaultUnit;
+                            }
+
+                            string before = RevitElementKit.ReadParameterDisplay(p);
+                            if (RevitElementKit.TrySetParameter(p, valTok, out string err, pUnit))
+                            {
+                                applied.Add(new JObject
+                                {
+                                    ["parameter"] = prop.Name,
+                                    ["requested"] = valTok,
+                                    ["unit"] = p.StorageType == StorageType.Double ? pUnit : null,
+                                    ["before"] = before,
+                                    ["after"] = RevitElementKit.ReadParameterDisplay(p)
+                                });
+                            }
+                            else
+                            {
+                                paramErrors.Add(new JObject { ["parameter"] = prop.Name, ["error"] = err });
+                            }
                         }
                     }
-                    return new JObject
+                    var payload = new JObject
                     {
                         ["source_type_id"] = srcId,
                         ["new_type_id"] = IdCompat.ToInt64(dup.Id),
                         ["new_type_name"] = dup.Name,
                         ["family"] = dup.FamilyName ?? string.Empty,
+                        ["unit_mode"] = defaultUnit,
                         ["applied_parameters"] = applied
                     };
+                    if (paramErrors.Count > 0) payload["parameter_errors"] = paramErrors;
+                    return payload;
                 },
                 (d, staged) =>
                 {
-                    staged["verified"] = RevitElementKit.ResolveElement(d, staged["new_type_id"]) != null;
+                    var dupEl = RevitElementKit.ResolveElement(d, staged["new_type_id"]) as ElementType;
+                    bool typeExists = dupEl != null;
+                    int verifiedParams = 0;
+                    int totalParams = 0;
+                    if (dupEl != null && staged["applied_parameters"] is JArray appliedArr)
+                    {
+                        totalParams = appliedArr.Count;
+                        foreach (var row in appliedArr.OfType<JObject>())
+                        {
+                            string pName = row.Value<string>("parameter") ?? string.Empty;
+                            var p = RevitElementKit.FindParameter(dupEl, pName);
+                            string reread = RevitElementKit.ReadParameterDisplay(p);
+                            row["verified_display"] = reread;
+                            if (string.Equals(reread, row.Value<string>("after"), StringComparison.Ordinal))
+                                verifiedParams++;
+                        }
+                    }
+                    staged["verified"] = typeExists && verifiedParams == totalParams;
+                    staged["verified_param_count"] = verifiedParams;
                     return staged;
                 },
                 $"Duplicated type '{srcType.Name}' as '{newName}'.");

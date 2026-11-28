@@ -66,18 +66,24 @@ namespace Scio.Revit.Commands
                 has_unsaved_changes = doc.IsModified
             };
 
-            // 2. Active view
+            // 2. Active view (Project Browser, Schedules, and System Browser views do not have Discipline)
             View activeView = uidoc?.ActiveView;
             object activeViewInfo = null;
             if (activeView != null)
             {
+                string viewDiscipline = null;
+                try { viewDiscipline = activeView.Discipline.ToString(); } catch { }
+
+                int? viewScale = null;
+                try { viewScale = activeView.Scale; } catch { }
+
                 activeViewInfo = new
                 {
                     id = Rid.Value(activeView.Id),
                     name = activeView.Name,
                     view_type = activeView.ViewType.ToString(),
-                    discipline = activeView.Discipline.ToString(),
-                    scale = activeView.Scale,
+                    discipline = viewDiscipline,
+                    scale = viewScale,
                     is_template = activeView.IsTemplate
                 };
             }

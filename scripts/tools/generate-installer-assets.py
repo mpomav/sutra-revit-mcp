@@ -40,15 +40,30 @@ def make_ico(icon_rgba: Image.Image) -> None:
 
 
 def make_small_bmp(icon_rgba: Image.Image) -> None:
-    # Inno Setup WizardSmallImageFile: 55x58 (24-bit BMP)
-    w, h = 55, 58
-    canvas = Image.new("RGBA", (w, h), WHITE + (255,))
-    # Place crisp 46x46 Sutra emblem centered with subtle SCIO orange bottom accent bar
-    emblem = icon_rgba.resize((46, 46), Image.Resampling.LANCZOS)
-    canvas.alpha_composite(emblem, ((w - 46) // 2, 4))
-    draw = ImageDraw.Draw(canvas)
-    draw.rectangle([10, h - 4, w - 10, h - 2], fill=SCIO_ORANGE + (255,))
-    canvas.convert("RGB").save(OUT_DIR / "wizard-small.bmp", format="BMP")
+    # Inno Setup WizardSmallImageFile multi-DPI (100%..250%) + legacy 100% wizard-small.bmp
+    dpi_specs = [
+        (100, 55, 58),
+        (125, 69, 73),
+        (150, 83, 87),
+        (175, 96, 102),
+        (200, 110, 116),
+        (225, 124, 131),
+        (250, 138, 145),
+    ]
+    for pct, w, h in dpi_specs:
+        canvas = Image.new("RGBA", (w, h), WHITE + (255,))
+        emblem_size = int(round(w * 0.84))
+        pad_top = max(2, int(round(h * 0.06)))
+        emblem = icon_rgba.resize((emblem_size, emblem_size), Image.Resampling.LANCZOS)
+        canvas.alpha_composite(emblem, ((w - emblem_size) // 2, pad_top))
+        draw = ImageDraw.Draw(canvas)
+        bar_h = max(2, int(round(h * 0.045)))
+        bar_pad = max(6, int(round(w * 0.16)))
+        draw.rectangle([bar_pad, h - bar_h - 1, w - bar_pad, h - 1], fill=SCIO_ORANGE + (255,))
+        rgb = canvas.convert("RGB")
+        rgb.save(OUT_DIR / f"sutra-small-{pct}.bmp", format="BMP")
+        if pct == 100:
+            rgb.save(OUT_DIR / "wizard-small.bmp", format="BMP")
 
 
 def make_banner_bmp(icon_rgba: Image.Image) -> None:

@@ -403,7 +403,7 @@ namespace Scio.Abstractions
             return sb.ToString();
         }
 
-        public static string RenderFooter(string leftText = "SCIO Revit MCP Â· SCIO BIM Hub", string rightText = null)
+        public static string RenderFooter(string leftText = "Sutra — Revit MCP · SCIO DC", string rightText = null)
         {
             return $"  <footer class=\"scio-footer\"><span>{WebUtility.HtmlEncode(leftText)}</span><span>{WebUtility.HtmlEncode(rightText ?? string.Empty)}</span></footer>";
         }

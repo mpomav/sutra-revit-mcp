@@ -19,17 +19,33 @@ namespace Scio.Module.CadIfc
             var opt = new Options { ComputeReferences = false, IncludeNonVisibleObjects = false };
             var geom = cad.get_Geometry(opt);
             if (geom == null) return lines;
-            CollectLines(doc, geom, Transform.Identity, layerName, lines);
+            CollectLines(doc, geom, Transform.Identity, layerName, lines, null);
             return lines;
         }
 
-        private static void CollectLines(Document doc, GeometryElement geom, Transform xform, string layerName, List<Line> acc)
+        public static Dictionary<string, int> CountLayerLines(Document doc, ImportInstance cad)
+        {
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var opt = new Options { ComputeReferences = false, IncludeNonVisibleObjects = false };
+            var geom = cad.get_Geometry(opt);
+            if (geom == null) return counts;
+            CollectLines(doc, geom, Transform.Identity, null, null, counts);
+            return counts;
+        }
+
+        private static void CollectLines(
+            Document doc,
+            GeometryElement geom,
+            Transform xform,
+            string? layerName,
+            List<Line>? acc,
+            Dictionary<string, int>? counts)
         {
             foreach (GeometryObject obj in geom)
             {
                 if (obj is GeometryInstance gi)
                 {
-                    CollectLines(doc, gi.GetSymbolGeometry(), xform.Multiply(gi.Transform), layerName, acc);
+                    CollectLines(doc, gi.GetSymbolGeometry(), xform.Multiply(gi.Transform), layerName, acc, counts);
                     continue;
                 }
 
@@ -41,11 +57,22 @@ namespace Scio.Module.CadIfc
                     !string.Equals(objLayer, layerName, StringComparison.OrdinalIgnoreCase))
                     continue;
 
+                string layerKey = string.IsNullOrWhiteSpace(objLayer) ? "(Unnamed)" : objLayer!;
+                double minCurveFt = Math.Max(1e-3, doc.Application.ShortCurveTolerance * 1.05);
+
                 if (obj is Line ln)
                 {
                     var p0 = xform.OfPoint(ln.GetEndPoint(0));
                     var p1 = xform.OfPoint(ln.GetEndPoint(1));
-                    if (p0.DistanceTo(p1) > 1e-3) acc.Add(Line.CreateBound(p0, p1));
+                    if (p0.DistanceTo(p1) >= minCurveFt)
+                    {
+                        try
+                        {
+                            acc?.Add(Line.CreateBound(p0, p1));
+                            if (counts != null) counts[layerKey] = counts.TryGetValue(layerKey, out int c) ? c + 1 : 1;
+                        }
+                        catch { }
+                    }
                 }
                 else if (obj is PolyLine pl)
                 {
@@ -54,18 +81,136 @@ namespace Scio.Module.CadIfc
                     {
                         var p0 = xform.OfPoint(pts[i]);
                         var p1 = xform.OfPoint(pts[i + 1]);
-                        if (p0.DistanceTo(p1) > 1e-3) acc.Add(Line.CreateBound(p0, p1));
+                        if (p0.DistanceTo(p1) >= minCurveFt)
+                        {
+                            try
+                            {
+                                acc?.Add(Line.CreateBound(p0, p1));
+                                if (counts != null) counts[layerKey] = counts.TryGetValue(layerKey, out int c) ? c + 1 : 1;
+                            }
+                            catch { }
+                        }
                     }
                 }
             }
         }
+
+        public readonly struct PairedWallSegment
+        {
+            public PairedWallSegment(XYZ p0, XYZ p1, double thicknessMm)
+            {
+                P0 = p0;
+                P1 = p1;
+                ThicknessMm = thicknessMm;
+            }
+            public XYZ P0 { get; }
+            public XYZ P1 { get; }
+            public double ThicknessMm { get; }
+        }
+
+        public static List<PairedWallSegment> PairParallelWalls(
+            List<Line> lines,
+            double minThicknessFt,
+            double maxThicknessFt,
+            double minOverlapRatio = 0.5,
+            double angleTolDeg = 2.0)
+        {
+            var result = new List<PairedWallSegment>();
+            if (lines.Count < 2) return result;
+
+            double cosTol = Math.Cos(angleTolDeg * Math.PI / 180.0);
+            int n = lines.Count;
+            var a0 = new XYZ[n];
+            var a1 = new XYZ[n];
+            var dir = new XYZ[n];
+            var len = new double[n];
+
+            for (int i = 0; i < n; i++)
+            {
+                var p0 = lines[i].GetEndPoint(0);
+                var p1 = lines[i].GetEndPoint(1);
+                a0[i] = new XYZ(p0.X, p0.Y, 0);
+                a1[i] = new XYZ(p1.X, p1.Y, 0);
+                double l = a0[i].DistanceTo(a1[i]);
+                len[i] = l;
+                dir[i] = l > 1e-6 ? (a1[i] - a0[i]) / l : XYZ.BasisX;
+            }
+
+            // Collect candidate pairs and match greedily by smallest perpendicular distance then largest overlap.
+            var candidates = new List<(int I, int J, double Dist, double Overlap, XYZ C0, XYZ C1)>();
+            for (int i = 0; i < n; i++)
+            {
+                if (len[i] < 1e-3) continue;
+                var di = dir[i];
+                var ni = new XYZ(-di.Y, di.X, 0);
+                double sA0 = a0[i].DotProduct(di);
+                double sA1 = a1[i].DotProduct(di);
+                if (sA0 > sA1) { double t = sA0; sA0 = sA1; sA1 = t; }
+                double tA = a0[i].DotProduct(ni);
+
+                for (int j = i + 1; j < n; j++)
+                {
+                    if (len[j] < 1e-3) continue;
+                    double dot = Math.Abs(di.DotProduct(dir[j]));
+                    if (dot < cosTol) continue;
+
+                    double tB = 0.5 * (a0[j].DotProduct(ni) + a1[j].DotProduct(ni));
+                    double dist = Math.Abs(tB - tA);
+                    if (dist < minThicknessFt || dist > maxThicknessFt) continue;
+
+                    double sB0 = a0[j].DotProduct(di);
+                    double sB1 = a1[j].DotProduct(di);
+                    if (sB0 > sB1) { double t = sB0; sB0 = sB1; sB1 = t; }
+
+                    double ov0 = Math.Max(sA0, sB0);
+                    double ov1 = Math.Min(sA1, sB1);
+                    double ov = ov1 - ov0;
+                    double minLen = Math.Min(len[i], len[j]);
+                    if (ov <= dist || ov < minOverlapRatio * minLen) continue;
+
+                    double tMid = 0.5 * (tA + tB);
+                    var c0 = di * ov0 + ni * tMid;
+                    var c1 = di * ov1 + ni * tMid;
+                    candidates.Add((i, j, dist, ov, c0, c1));
+                }
+            }
+
+            candidates.Sort((x, y) =>
+            {
+                int cmp = x.Dist.CompareTo(y.Dist);
+                return cmp != 0 ? cmp : y.Overlap.CompareTo(x.Overlap);
+            });
+
+            var used = new bool[n];
+            foreach (var c in candidates)
+            {
+                if (used[c.I] || used[c.J]) continue;
+                used[c.I] = true;
+                used[c.J] = true;
+                result.Add(new PairedWallSegment(c.C0, c.C1, Math.Round(UnitKit.FeetToMm(c.Dist), 1)));
+            }
+
+            return result;
+        }
     }
 
-    [ScioTool("scio_cad_inspect", "cad_ifc", "Inspect linked or imported CAD instances (DWG/DXF): list layers, line counts, and bounding boxes in mm.", ReadOnly = true)]
+    [ScioTool("scio_cad_inspect", "cad_ifc", "Inspect linked or imported CAD instances (DWG/DXF): list layers, line counts per layer, bounding boxes in mm, and optional compact [x1,y1,x2,y2] mm geometry for a layer.", ReadOnly = true)]
     public sealed class CadInspectCommand : IRevitCommand
     {
         [ScioParam("import_id", "Optional ImportInstance ElementId to inspect in detail.")]
         public long? ImportId { get; set; }
+
+        [ScioParam("include_counts", "Include per-layer line/polyline segment counts (default true when import_id is specified).")]
+        public bool? IncludeCounts { get; set; }
+
+        [ScioParam("include_geometry", "When true, return compact integer-mm [x1,y1,x2,y2] segments for 'layer_name' (default false).")]
+        public bool IncludeGeometry { get; set; } = false;
+
+        [ScioParam("layer_name", "CAD layer name to extract geometry from when include_geometry=true.")]
+        public string LayerName { get; set; } = string.Empty;
+
+        [ScioParam("max_segments", "Maximum geometry segments to return when include_geometry=true (default 1000, max 5000).")]
+        public int MaxSegments { get; set; } = 1000;
 
         public ToolDescriptor Descriptor { get; } = JsonSchemaBuilder.DescribeTool(typeof(CadInspectCommand));
 
@@ -73,6 +218,11 @@ namespace Scio.Module.CadIfc
         {
             var doc = context.RequireActiveDocument(request.TargetDocument);
             long? idArg = request.Arguments.Value<long?>("import_id");
+            bool includeCounts = request.Arguments.Value<bool?>("include_counts") ?? idArg.HasValue;
+            bool includeGeometry = request.Arguments.Value<bool?>("include_geometry") ?? false;
+            string layerFilter = request.Arguments.Value<string>("layer_name") ?? string.Empty;
+            int maxSegments = Math.Max(1, Math.Min(5000, request.Arguments.Value<int?>("max_segments") ?? 1000));
+
             var instances = new FilteredElementCollector(doc).OfClass(typeof(ImportInstance)).Cast<ImportInstance>()
                 .Where(i => !idArg.HasValue || IdCompat.ToInt64(i.Id) == idArg.Value)
                 .ToList();
@@ -86,7 +236,8 @@ namespace Scio.Module.CadIfc
                     foreach (Category sub in inst.Category.SubCategories)
                         layers.Add(sub.Name);
                 }
-                arr.Add(new JObject
+
+                var item = new JObject
                 {
                     ["id"] = IdCompat.ToInt64(inst.Id),
                     ["name"] = inst.Category?.Name ?? inst.Name,
@@ -94,7 +245,38 @@ namespace Scio.Module.CadIfc
                     ["layer_count"] = layers.Count,
                     ["layers"] = layers,
                     ["bbox_mm"] = RevitElementKit.SerializeBoundingBoxMm(inst.get_BoundingBox(null))
-                });
+                };
+
+                if (includeCounts)
+                {
+                    var counts = CadGeometryKit.CountLayerLines(doc, inst);
+                    var countsObj = new JObject();
+                    foreach (var kv in counts.OrderByDescending(k => k.Value))
+                        countsObj[kv.Key] = kv.Value;
+                    item["layer_counts"] = countsObj;
+                }
+
+                if (includeGeometry)
+                {
+                    var segs = CadGeometryKit.ExtractLayerLines(doc, inst, layerFilter);
+                    var segArr = new JArray();
+                    foreach (var ln in segs.Take(maxSegments))
+                    {
+                        var p0 = ln.GetEndPoint(0);
+                        var p1 = ln.GetEndPoint(1);
+                        segArr.Add(new JArray(
+                            (int)Math.Round(UnitKit.FeetToMm(p0.X)),
+                            (int)Math.Round(UnitKit.FeetToMm(p0.Y)),
+                            (int)Math.Round(UnitKit.FeetToMm(p1.X)),
+                            (int)Math.Round(UnitKit.FeetToMm(p1.Y))));
+                    }
+                    item["geometry_layer"] = string.IsNullOrWhiteSpace(layerFilter) ? "(all)" : layerFilter;
+                    item["total_segments"] = segs.Count;
+                    item["returned_segments"] = segArr.Count;
+                    item["segments_mm"] = segArr;
+                }
+
+                arr.Add(item);
             }
 
             return ToolResponse.Success(request.RequestId, new JObject { ["count"] = arr.Count, ["cad_instances"] = arr }, $"Inspected {arr.Count} CAD instance(s).");
@@ -157,23 +339,50 @@ namespace Scio.Module.CadIfc
         }
     }
 
-    [ScioTool("scio_cad_to_walls", "cad_ifc", "Convert lines from a specified CAD ImportInstance layer into Revit Walls on a level with dry-run preview.", ReadOnly = false)]
+    [ScioTool("scio_cad_to_walls", "cad_ifc", "Convert lines/polylines from a specified CAD ImportInstance layer into Revit Walls (centerline or double_line parallel-face pairing) with Basic wall default, optional type_id/thickness_map, and dry-run preview.", ReadOnly = false)]
     public sealed class CadToWallsCommand : IRevitCommand
     {
         [ScioParam("import_id", "ImportInstance ElementId.", Required = true)]
         public long ImportId { get; set; }
 
-        [ScioParam("layer_name", "CAD layer name containing wall centerlines.", Required = true)]
+        [ScioParam("layer_name", "CAD layer name containing wall lines or double-line faces.", Required = true)]
         public string LayerName { get; set; } = string.Empty;
+
+        [ScioParam("mode", "Conversion mode: 'centerline' (default, 1 wall per line) or 'double_line' (pairs parallel wall faces into centerline + thickness).", EnumValues = new[] { "centerline", "double_line" })]
+        public string Mode { get; set; } = "centerline";
 
         [ScioParam("level", "Target level name.")]
         public string LevelName { get; set; } = string.Empty;
+
+        [ScioParam("type_id", "Optional default WallType ElementId (otherwise first Basic WallType is used, never Curtain Wall).")]
+        public long? TypeId { get; set; }
+
+        [ScioParam("wall_type", "Optional default WallType name (case-insensitive).")]
+        public string WallTypeName { get; set; } = string.Empty;
 
         [ScioParam("height_mm", "Wall height in mm (default 3000).")]
         public double HeightMm { get; set; } = 3000;
 
         [ScioParam("min_length_mm", "Ignore segments shorter than this mm threshold (default 150).")]
         public double MinLengthMm { get; set; } = 150;
+
+        [ScioParam("min_thickness_mm", "double_line: minimum parallel-face distance in mm (default 80).")]
+        public double MinThicknessMm { get; set; } = 80;
+
+        [ScioParam("max_thickness_mm", "double_line: maximum parallel-face distance in mm (default 460).")]
+        public double MaxThicknessMm { get; set; } = 460;
+
+        [ScioParam("thickness_tolerance_mm", "double_line: matching tolerance in mm for thickness_map entries (default 20).")]
+        public double ThicknessToleranceMm { get; set; } = 20;
+
+        [ScioParam("thickness_map", "double_line: optional JSON object mapping CAD thickness in mm (e.g. '130', '240') to a WallType ElementId or WallType name.")]
+        public JObject? ThicknessMap { get; set; }
+
+        [ScioParam("skip_unmatched_thickness", "double_line: when true and thickness_map is provided, skip walls whose thickness is not in thickness_map instead of falling back to default type (default false).")]
+        public bool SkipUnmatchedThickness { get; set; } = false;
+
+        [ScioParam("max_walls", "Maximum walls to create in one call (default 2000, max 5000). Truncation is explicitly reported.")]
+        public int MaxWalls { get; set; } = 2000;
 
         [ScioParam("dry_run", "Preview without committing (default true).")]
         public bool DryRun { get; set; } = true;
@@ -188,10 +397,23 @@ namespace Scio.Module.CadIfc
             if (cad == null || string.IsNullOrWhiteSpace(layer))
                 return ToolResponse.Refusal(request.RequestId, "invalid_request", "Valid 'import_id' and 'layer_name' required.");
 
+            string mode = (request.Arguments.Value<string>("mode") ?? "centerline").Trim().ToLowerInvariant();
             string? lvlName = request.Arguments.Value<string>("level");
             var lvl = new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>().OrderBy(l => l.Elevation)
                 .FirstOrDefault(l => string.IsNullOrWhiteSpace(lvlName) || string.Equals(l.Name, lvlName, StringComparison.OrdinalIgnoreCase));
             if (lvl == null) return ToolResponse.Refusal(request.RequestId, "no_level", "Target level not found.");
+
+            var allWallTypes = new FilteredElementCollector(doc).OfClass(typeof(WallType)).Cast<WallType>().ToList();
+            WallType? defaultWallType = null;
+            long? reqTypeId = request.Arguments.Value<long?>("type_id");
+            string? reqTypeName = request.Arguments.Value<string>("wall_type");
+            if (reqTypeId.HasValue && reqTypeId.Value > 0)
+                defaultWallType = doc.GetElement(IdCompat.FromInt64(reqTypeId.Value)) as WallType;
+            if (defaultWallType == null && !string.IsNullOrWhiteSpace(reqTypeName))
+                defaultWallType = allWallTypes.FirstOrDefault(wt => string.Equals(wt.Name, reqTypeName.Trim(), StringComparison.OrdinalIgnoreCase));
+            defaultWallType ??= allWallTypes.FirstOrDefault(wt => wt.Kind == WallKind.Basic) ?? allWallTypes.FirstOrDefault();
+            if (defaultWallType == null)
+                return ToolResponse.Refusal(request.RequestId, "no_wall_type", "No WallType found in document.");
 
             double minLenFt = UnitKit.MmToFeet(request.Arguments.Value<double?>("min_length_mm") ?? 150.0);
             double heightFt = UnitKit.MmToFeet(request.Arguments.Value<double?>("height_mm") ?? 3000.0);
@@ -199,29 +421,144 @@ namespace Scio.Module.CadIfc
             if (lines.Count == 0)
                 return ToolResponse.Refusal(request.RequestId, "no_lines", $"No qualifying lines found on CAD layer '{layer}'.");
 
-            var wallType = new FilteredElementCollector(doc).OfClass(typeof(WallType)).Cast<WallType>().First();
+            // Parse optional thickness_map for double_line mode
+            var thicknessRules = new List<(double TargetMm, WallType Type)>();
+            if (request.Arguments["thickness_map"] is JObject tmap)
+            {
+                foreach (var prop in tmap.Properties())
+                {
+                    if (!double.TryParse(prop.Name, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double targetMm))
+                        continue;
+                    WallType? mapped = null;
+                    if (prop.Value.Type == JTokenType.Integer)
+                        mapped = doc.GetElement(IdCompat.FromInt64(prop.Value.Value<long>())) as WallType;
+                    else
+                        mapped = allWallTypes.FirstOrDefault(wt => string.Equals(wt.Name, prop.Value?.ToString(), StringComparison.OrdinalIgnoreCase));
+                    if (mapped != null) thicknessRules.Add((targetMm, mapped));
+                }
+            }
+
+            double minThickFt = UnitKit.MmToFeet(request.Arguments.Value<double?>("min_thickness_mm") ?? 80.0);
+            double maxThickFt = UnitKit.MmToFeet(request.Arguments.Value<double?>("max_thickness_mm") ?? 460.0);
+            double thickTolMm = Math.Max(1.0, request.Arguments.Value<double?>("thickness_tolerance_mm") ?? 20.0);
+            bool skipUnmatched = request.Arguments.Value<bool?>("skip_unmatched_thickness") ?? false;
+            int maxWalls = Math.Max(1, Math.Min(5000, request.Arguments.Value<int?>("max_walls") ?? 2000));
             bool dryRun = request.DryRun ?? request.Arguments.Value<bool?>("dry_run") ?? true;
 
             return TransactionPipeline.RunVerified(
                 doc,
                 request.RequestId,
-                $"CAD to Walls ({layer})",
+                $"CAD to Walls ({layer}, {mode})",
                 dryRun,
                 d =>
                 {
+                    double shortTol = Math.Max(minLenFt, d.Application.ShortCurveTolerance * 1.05);
                     var ids = new JArray();
-                    foreach (var ln in lines.Take(500))
+                    int skippedShort = 0;
+                    int skippedFailed = 0;
+                    int skippedUnmatched = 0;
+                    var byType = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    var unmatchedByThick = new Dictionary<int, int>();
+
+                    if (mode == "double_line")
                     {
-                        var p0 = new XYZ(ln.GetEndPoint(0).X, ln.GetEndPoint(0).Y, lvl.Elevation);
-                        var p1 = new XYZ(ln.GetEndPoint(1).X, ln.GetEndPoint(1).Y, lvl.Elevation);
-                        if (p0.DistanceTo(p1) < minLenFt) continue;
-                        var w = Wall.Create(d, Line.CreateBound(p0, p1), wallType.Id, lvl.Id, heightFt, 0.0, false, false);
-                        ids.Add(IdCompat.ToInt64(w.Id));
+                        var paired = CadGeometryKit.PairParallelWalls(lines, minThickFt, maxThickFt);
+                        int skippedByLimit = Math.Max(0, paired.Count - maxWalls);
+                        foreach (var seg in paired.Take(maxWalls))
+                        {
+                            var p0 = new XYZ(seg.P0.X, seg.P0.Y, lvl.Elevation);
+                            var p1 = new XYZ(seg.P1.X, seg.P1.Y, lvl.Elevation);
+                            if (p0.DistanceTo(p1) < shortTol) { skippedShort++; continue; }
+
+                            WallType? chosen = null;
+                            if (thicknessRules.Count > 0)
+                            {
+                                var best = thicknessRules
+                                    .Select(r => (Rule: r, Diff: Math.Abs(r.TargetMm - seg.ThicknessMm)))
+                                    .Where(x => x.Diff <= thickTolMm)
+                                    .OrderBy(x => x.Diff)
+                                    .FirstOrDefault();
+                                chosen = best.Rule.Type;
+                                if (chosen == null)
+                                {
+                                    int bucketMm = (int)(Math.Round(seg.ThicknessMm / 10.0) * 10);
+                                    unmatchedByThick[bucketMm] = unmatchedByThick.TryGetValue(bucketMm, out int uc) ? uc + 1 : 1;
+                                    if (skipUnmatched) { skippedUnmatched++; continue; }
+                                }
+                            }
+                            chosen ??= defaultWallType;
+
+                            try
+                            {
+                                var w = Wall.Create(d, Line.CreateBound(p0, p1), chosen.Id, lvl.Id, heightFt, 0.0, false, false);
+                                byType[chosen.Name] = byType.TryGetValue(chosen.Name, out int tc) ? tc + 1 : 1;
+                                if (!dryRun) ids.Add(IdCompat.ToInt64(w.Id));
+                                else ids.Add(0);
+                            }
+                            catch { skippedFailed++; }
+                        }
+
+                        var payload = new JObject
+                        {
+                            ["layer"] = layer,
+                            ["mode"] = mode,
+                            ["default_wall_type"] = defaultWallType.Name,
+                            ["source_lines"] = lines.Count,
+                            ["paired_walls"] = paired.Count,
+                            ["created_walls"] = ids.Count,
+                            ["max_walls"] = maxWalls,
+                            ["truncated"] = skippedByLimit > 0,
+                            ["skipped_by_limit"] = skippedByLimit,
+                            ["by_type"] = JObject.FromObject(byType),
+                            ["skipped_short_segments"] = skippedShort,
+                            ["skipped_unmatched_thickness"] = skippedUnmatched,
+                            ["skipped_failed_segments"] = skippedFailed
+                        };
+                        if (skippedByLimit > 0)
+                            payload["warning"] = $"Truncated by max_walls={maxWalls}: {skippedByLimit} paired wall(s) were not processed. Increase max_walls (up to 5000) to process all.";
+                        if (unmatchedByThick.Count > 0)
+                            payload["unmatched_thickness_mm_counts"] = JObject.FromObject(unmatchedByThick.ToDictionary(k => k.Key.ToString(), v => v.Value));
+                        if (!dryRun) payload["wall_ids"] = ids;
+                        return payload;
                     }
-                    return new JObject { ["layer"] = layer, ["source_lines"] = lines.Count, ["created_walls"] = ids.Count, ["wall_ids"] = ids };
+                    else
+                    {
+                        int skippedByLimit = Math.Max(0, lines.Count - maxWalls);
+                        foreach (var ln in lines.Take(maxWalls))
+                        {
+                            var p0 = new XYZ(ln.GetEndPoint(0).X, ln.GetEndPoint(0).Y, lvl.Elevation);
+                            var p1 = new XYZ(ln.GetEndPoint(1).X, ln.GetEndPoint(1).Y, lvl.Elevation);
+                            if (p0.DistanceTo(p1) < shortTol) { skippedShort++; continue; }
+                            try
+                            {
+                                var w = Wall.Create(d, Line.CreateBound(p0, p1), defaultWallType.Id, lvl.Id, heightFt, 0.0, false, false);
+                                if (!dryRun) ids.Add(IdCompat.ToInt64(w.Id));
+                                else ids.Add(0);
+                            }
+                            catch { skippedFailed++; }
+                        }
+
+                        var payload = new JObject
+                        {
+                            ["layer"] = layer,
+                            ["mode"] = mode,
+                            ["default_wall_type"] = defaultWallType.Name,
+                            ["source_lines"] = lines.Count,
+                            ["created_walls"] = ids.Count,
+                            ["max_walls"] = maxWalls,
+                            ["truncated"] = skippedByLimit > 0,
+                            ["skipped_by_limit"] = skippedByLimit,
+                            ["skipped_short_segments"] = skippedShort,
+                            ["skipped_failed_segments"] = skippedFailed
+                        };
+                        if (skippedByLimit > 0)
+                            payload["warning"] = $"Truncated by max_walls={maxWalls}: {skippedByLimit} line(s) were not processed. Increase max_walls (up to 5000) to process all.";
+                        if (!dryRun) payload["wall_ids"] = ids;
+                        return payload;
+                    }
                 },
                 (d, staged) => staged,
-                $"Converted {lines.Count} CAD line(s) from '{layer}' into walls.");
+                $"Converted CAD layer '{layer}' ({mode}) into walls.");
         }
     }
 
@@ -233,6 +570,9 @@ namespace Scio.Module.CadIfc
 
         [ScioParam("layer_name", "CAD layer name containing grid lines.", Required = true)]
         public string LayerName { get; set; } = string.Empty;
+
+        [ScioParam("max_grids", "Maximum grids to create in one call (default 500, max 2000). Truncation is explicitly reported.")]
+        public int MaxGrids { get; set; } = 500;
 
         [ScioParam("dry_run", "Preview without committing (default true).")]
         public bool DryRun { get; set; } = true;
@@ -251,6 +591,7 @@ namespace Scio.Module.CadIfc
             if (lines.Count == 0)
                 return ToolResponse.Refusal(request.RequestId, "no_lines", $"No grid lines found on CAD layer '{layer}'.");
 
+            int maxGrids = Math.Max(1, Math.Min(2000, request.Arguments.Value<int?>("max_grids") ?? 500));
             bool dryRun = request.DryRun ?? request.Arguments.Value<bool?>("dry_run") ?? true;
             return TransactionPipeline.RunVerified(
                 doc,
@@ -259,16 +600,46 @@ namespace Scio.Module.CadIfc
                 dryRun,
                 d =>
                 {
+                    double shortTol = Math.Max(1.0, d.Application.ShortCurveTolerance * 1.05);
                     var ids = new JArray();
-                    foreach (var ln in lines.Take(200))
+                    int skippedShort = 0;
+                    int skippedFailed = 0;
+                    int skippedByLimit = Math.Max(0, lines.Count - maxGrids);
+                    foreach (var ln in lines.Take(maxGrids))
                     {
                         var p0 = new XYZ(ln.GetEndPoint(0).X, ln.GetEndPoint(0).Y, 0);
                         var p1 = new XYZ(ln.GetEndPoint(1).X, ln.GetEndPoint(1).Y, 0);
-                        if (p0.DistanceTo(p1) < 1.0) continue;
-                        var g = Grid.Create(d, Line.CreateBound(p0, p1));
-                        ids.Add(IdCompat.ToInt64(g.Id));
+                        if (p0.DistanceTo(p1) < shortTol)
+                        {
+                            skippedShort++;
+                            continue;
+                        }
+                        try
+                        {
+                            var g = Grid.Create(d, Line.CreateBound(p0, p1));
+                            if (!dryRun) ids.Add(IdCompat.ToInt64(g.Id));
+                            else ids.Add(0);
+                        }
+                        catch
+                        {
+                            skippedFailed++;
+                        }
                     }
-                    return new JObject { ["layer"] = layer, ["created_grids"] = ids.Count, ["grid_ids"] = ids };
+                    var payload = new JObject
+                    {
+                        ["layer"] = layer,
+                        ["source_lines"] = lines.Count,
+                        ["created_grids"] = ids.Count,
+                        ["max_grids"] = maxGrids,
+                        ["truncated"] = skippedByLimit > 0,
+                        ["skipped_by_limit"] = skippedByLimit,
+                        ["skipped_short_segments"] = skippedShort,
+                        ["skipped_failed_segments"] = skippedFailed
+                    };
+                    if (skippedByLimit > 0)
+                        payload["warning"] = $"Truncated by max_grids={maxGrids}: {skippedByLimit} line(s) were not processed.";
+                    if (!dryRun) payload["grid_ids"] = ids;
+                    return payload;
                 },
                 (d, staged) => staged,
                 $"Converted CAD layer '{layer}' into grids.");
@@ -353,6 +724,7 @@ namespace Scio.Module.CadIfc
             bool ok;
             using (var tx = new Transaction(doc, "SCIO: Export IFC"))
             {
+                TransactionPipeline.AttachWarningCapture(tx);
                 tx.Start();
                 ok = doc.Export(folder, name, opts);
                 tx.RollBack();

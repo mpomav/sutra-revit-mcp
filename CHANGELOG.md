@@ -1,5 +1,26 @@
 # Changelog — Sutra (Revit, AutoCAD & Civil 3D MCP by SCIO DC)
 
+## v1.4.0 — Casco y Chaleco (2026-11-28)
+
+Security hardening, Revit Ribbon & HiDPI visual polish, interactive offline HTML reports, high-density AutoCAD/Civil 3D readers (`scio_cad_entities`, `scio_cad_texts`), and CAD/IFC/Modeling improvements across Revit 2023–2027 and AutoCAD/Civil 3D 2023–2026.
+
+### Security Hardening & Reliability
+- **Inline Image Containment (`McpStdioHost`):** restricted inline image attachment to local Sutra/Temp directories (blocking UNC and arbitrary user paths) and required a successful `scio_capture_view` entry in `scio_code_mode` traces.
+- **Telemetry SSRF Guard (`TelemetryTool`):** enforced HTTPS + `*.scio.pe` allowlist, rejecting `localhost`, loopback, and raw IP addresses.
+- **Script Promotion Guard (`PromoteScriptTool` + `CodeModeTool`):** blocked `scio_promote_script` inside `scio_code_mode`, enforced local `*.extension` canonical containment on `export_pyrevit`, and added `dry_run` preview support.
+- **Trusted Release URLs (`SutraUpdateChecker` + `UpdateAvailableDialog`):** validated download/release URLs against `https://github.com/mpomav/sutra-revit-mcp/` and GitHub release asset hosts before `ShellExecute`.
+- **Dynamic Code & SQLite Guards:** blocked UNC paths and non-script extensions in `scio_execute_python` / `scio_execute_csharp`, added SQLite `sqlite3_progress_handler` timeout and null-byte rejection in `SqliteIngestor`/`QueryLocalTool`, enforced `MaxDepth = 64` + `TypeNameHandling = None` in `PipeFraming`, capped concurrent IPC clients (`MaxConcurrentClients = 32`) in Revit and CAD pipe servers, and fixed a `CancellationTokenRegistration` leak in `RevitCommandDispatcher`.
+- **Security Policy & Adversarial Tests:** added `SECURITY.md`, 20 new adversarial unit tests (`SecurityHardeningTests`, 85/85 passing), `Scio.Cad` in `Scio.RevitMcp.slnx` and CI, plus `dotnet list package --vulnerable` in GitHub Actions.
+
+### UI, Visual & Installer Polish
+- **Revit Ribbon (`ScioRibbon`, `RibbonIconRenderer`, `ScioTheme`):** unified panel name to **Sutra MCP**, added 3-tier permission profile selector (`ReadOnly` / `SafeWrite` / `UnsafeCode`), mandatory confirmation modal with checkbox when enabling dynamic Python/C#, **Carpeta de salidas** shortcut, live status indicator on the Ribbon button, 192 DPI (2×) supersampled vector icons with the Sutra sacred-knot emblem, keyboard focus/pressed states, fixed `AboutDialog` update button chrome, and fixed `ScioDialog` danger button styling.
+- **Interactive Offline HTML Reports (`ReportTool` + `ScioHtmlTheme`):** added Light/Dark theme toggle, live table filter, click-to-sort columns, and Copy CSV button (100% offline, zero external dependencies).
+- **HiDPI Windows Setup Installer (`sutra-revit-mcp.iss` + `generate-installer-assets.py`):** generated multi-DPI `sutra-small-100..250.bmp` header badges alongside `sutra-wizard-100..250.bmp` and eliminated UTF-8 mojibake across UI and reports.
+
+### AutoCAD / Civil 3D & Revit Capabilities
+- **High-Density CAD Entity & Text Readers (`Scio.Cad` + `Scio.Server`):** added `scio_cad_entities` (`TEXT`, `MTEXT`, `INSERT`, `HATCH` in integer mm WCS with dynamic block effective names, nested traversal, hatch boundary tessellation, and pagination) and `scio_cad_texts` (normalized mm text/attribute extraction with layer/text/bbox filters).
+- **Revit CAD/IFC, Modeling & QA Improvements:** expanded `CadIfcCommands`, `ModelConfigCommands`, `FamiliesAndCatalogCommands`, `ConstructionModelingCommands`, `GeometryAndElementsCommands`, `ParameterAndMutationCommands`, `AuditAndClashCommands`, and `ContextCommand`.
+
 ## v1.3.0 (2026-11-26)
 
 Clean-room expansion adding structural view planning, web-ready 3D mesh export (`glTF 2.0 / .glb` & `geometry_json`), 2-layer raster Image → BIM workflows, Roslyn in-memory C# execution under `UnsafeCode`, and per-material takeoff/CRUD parity across Revit 2023–2027.

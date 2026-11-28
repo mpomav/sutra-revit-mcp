@@ -269,7 +269,7 @@ namespace Scio.Server
             };
         }
 
-        private static string Escape(string s) => (s ?? string.Empty).Replace("'", "''");
+        private static string Escape(string s) => (s ?? string.Empty).Replace("\0", string.Empty).Replace("'", "''");
     }
 }
 

@@ -116,6 +116,9 @@ namespace Scio.Server
                 lock (_lock)
                 {
                     seq = ++_seq;
+                    int requestBytes = Encoding.UTF8.GetByteCount((request.Arguments ?? new JObject()).ToString(Formatting.None));
+                    int responseBytes = Encoding.UTF8.GetByteCount(response.Data?.ToString(Formatting.None) ?? "null");
+                    int estTokens = (int)Math.Ceiling(responseBytes / 3.5);
                     var entry = new JObject
                     {
                         ["schema"] = "sutra.trace/1",
@@ -130,7 +133,10 @@ namespace Scio.Server
                         ["error_code"] = response.Error?.Code,
                         ["verification"] = response.Verification ?? string.Empty,
                         ["result_shape"] = SummarizeShape(response.Data),
-                        ["duration_ms"] = Math.Max(0, durationMs)
+                        ["duration_ms"] = Math.Max(0, durationMs),
+                        ["request_bytes"] = requestBytes,
+                        ["response_bytes"] = responseBytes,
+                        ["est_tokens"] = estTokens
                     };
 
                     File.AppendAllText(SessionFilePath, entry.ToString(Formatting.None) + "\n", new UTF8Encoding(false));

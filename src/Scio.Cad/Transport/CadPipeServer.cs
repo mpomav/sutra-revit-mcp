@@ -22,6 +22,8 @@ namespace Scio.Cad.Transport
     /// </summary>
     internal sealed class CadPipeServer
     {
+        private const int MaxConcurrentClients = 32;
+        private readonly SemaphoreSlim _clientSlots = new SemaphoreSlim(MaxConcurrentClients, MaxConcurrentClients);
         private readonly CadDispatcher _dispatcher;
         private readonly string _cadYear;
         private readonly string _hostKind; // "civil3d" or "autocad"
@@ -175,7 +177,16 @@ namespace Scio.Cad.Transport
 
                     NamedPipeServerStream conn = server;
                     server = null;
-                    new Thread(() => HandleConnection(conn))
+                    if (!_clientSlots.Wait(0))
+                    {
+                        SafeClose(conn);
+                        continue;
+                    }
+                    new Thread(() =>
+                    {
+                        try { HandleConnection(conn); }
+                        finally { _clientSlots.Release(); }
+                    })
                     {
                         IsBackground = true,
                         Name = "ScioCad.PipeWorker"

@@ -692,20 +692,26 @@ namespace Scio.Module.Modeling
         }
     }
 
-    [ScioTool("scio_manage_system_types", "modeling", "List or duplicate Revit system types (wall, floor, roof, ceiling, pipe, duct) with optional compound thickness summary.", ReadOnly = false)]
+    [ScioTool("scio_manage_system_types", "modeling", "List, inspect, duplicate, or edit CompoundStructure layers (set_layers) of Revit system types (wall, floor, roof, ceiling, pipe, duct).", ReadOnly = false)]
     public sealed class ManageSystemTypesCommand : IRevitCommand
     {
-        [ScioParam("action", "Operation: list (default) or duplicate.", EnumValues = new[] { "list", "duplicate" })]
+        [ScioParam("action", "Operation: list (default), inspect, duplicate, or set_layers.", EnumValues = new[] { "list", "inspect", "duplicate", "set_layers" })]
         public string Action { get; set; } = "list";
 
-        [ScioParam("family_kind", "System family kind.", EnumValues = new[] { "wall", "floor", "roof", "ceiling", "pipe", "duct" })]
+        [ScioParam("family_kind", "System family kind (for list).", EnumValues = new[] { "wall", "floor", "roof", "ceiling", "pipe", "duct" })]
         public string FamilyKind { get; set; } = "wall";
 
-        [ScioParam("source_type_id", "Source system type ID for duplicate.")]
+        [ScioParam("type_id", "Target system ElementType ID for inspect or set_layers (alias: source_type_id).")]
+        public long? TypeId { get; set; }
+
+        [ScioParam("source_type_id", "Source system type ID for duplicate (or alias for type_id).")]
         public long? SourceTypeId { get; set; }
 
         [ScioParam("new_name", "New type name for duplicate.")]
         public string NewName { get; set; } = string.Empty;
+
+        [ScioParam("layers", "For set_layers: array of { function?: 'Structure'|'Substrate'|'Insulation'|'Finish1'|'Finish2'|'Membrane', thickness_mm: number, material_id?: long, material_name?: string }.")]
+        public JArray? Layers { get; set; }
 
         [ScioParam("dry_run", "Preview without committing (default true).")]
         public bool DryRun { get; set; } = true;
@@ -754,9 +760,109 @@ namespace Scio.Module.Modeling
                 return ToolResponse.Success(request.RequestId, new JObject { ["kind"] = kind, ["count"] = arr.Count, ["types"] = arr }, $"Listed {arr.Count} {kind} system type(s).");
             }
 
-            long srcId = request.Arguments.Value<long?>("source_type_id") ?? 0;
+            long targetId = request.Arguments.Value<long?>("type_id") ?? request.Arguments.Value<long?>("source_type_id") ?? 0;
+
+            if (action == "inspect")
+            {
+                var et = RevitElementKit.ResolveElement(doc, targetId) as ElementType;
+                if (et == null)
+                    return ToolResponse.Refusal(request.RequestId, "type_not_found", $"System ElementType {targetId} not found.");
+                var payload = new JObject
+                {
+                    ["id"] = IdCompat.ToInt64(et.Id),
+                    ["family"] = et.FamilyName ?? string.Empty,
+                    ["name"] = et.Name
+                };
+                if (et is HostObjAttributes hoa)
+                {
+                    var cs = hoa.GetCompoundStructure();
+                    if (cs != null)
+                    {
+                        payload["width_mm"] = Math.Round(UnitKit.FeetToMm(cs.GetWidth()), 1);
+                        payload["layers"] = SerializeCompoundLayers(doc, cs);
+                    }
+                }
+                return ToolResponse.Success(request.RequestId, payload, $"Inspected system type '{et.Name}'.");
+            }
+
+            if (action == "set_layers")
+            {
+                var hoa = RevitElementKit.ResolveElement(doc, targetId) as HostObjAttributes;
+                if (hoa == null)
+                    return ToolResponse.Refusal(request.RequestId, "type_not_found", $"Compound HostObjAttributes ElementType {targetId} not found.");
+                var layerSpecs = request.Arguments["layers"] as JArray;
+                if (layerSpecs == null || layerSpecs.Count == 0)
+                    return ToolResponse.Refusal(request.RequestId, "missing_layers", "Provide a non-empty 'layers' array for set_layers.");
+
+                var materials = new FilteredElementCollector(doc).OfClass(typeof(Material)).Cast<Material>().ToList();
+                var newLayers = new List<CompoundStructureLayer>();
+                foreach (var spec in layerSpecs.OfType<JObject>())
+                {
+                    double thickMm = spec.Value<double?>("thickness_mm") ?? 0.0;
+                    if (thickMm < 0)
+                        return ToolResponse.Refusal(request.RequestId, "invalid_thickness", "Layer 'thickness_mm' must be >= 0.");
+
+                    string fnStr = (spec.Value<string>("function") ?? "Structure").Trim();
+                    MaterialFunctionAssignment fn = Enum.TryParse<MaterialFunctionAssignment>(fnStr, true, out var parsedFn)
+                        ? parsedFn : MaterialFunctionAssignment.Structure;
+
+                    ElementId matId = ElementId.InvalidElementId;
+                    long? matIdArg = spec.Value<long?>("material_id");
+                    string? matNameArg = spec.Value<string>("material_name");
+                    if (matIdArg.HasValue && matIdArg.Value > 0 && doc.GetElement(IdCompat.FromInt64(matIdArg.Value)) is Material mById)
+                        matId = mById.Id;
+                    else if (!string.IsNullOrWhiteSpace(matNameArg))
+                    {
+                        var mByName = materials.FirstOrDefault(m => string.Equals(m.Name, matNameArg.Trim(), StringComparison.OrdinalIgnoreCase));
+                        if (mByName == null)
+                            return ToolResponse.Refusal(request.RequestId, "material_not_found", $"Material '{matNameArg}' not found.");
+                        matId = mByName.Id;
+                    }
+
+                    newLayers.Add(new CompoundStructureLayer(UnitKit.MmToFeet(thickMm), fn, matId));
+                }
+
+                bool dryRunSet = request.DryRun ?? request.Arguments.Value<bool?>("dry_run") ?? true;
+                return TransactionPipeline.RunVerified(
+                    doc,
+                    request.RequestId,
+                    $"Set Layers {hoa.Name}",
+                    dryRunSet,
+                    d =>
+                    {
+                        var cs = CompoundStructure.CreateSimpleCompoundStructure(newLayers);
+                        if (!(hoa is WallType))
+                            cs.EndCap = EndCapCondition.NoEndCap;
+                        if (!cs.IsValid(d, out _, out _))
+                            throw new InvalidOperationException("Resulting CompoundStructure failed Revit validation (check layer functions/thicknesses).");
+                        hoa.SetCompoundStructure(cs);
+                        var rereadCs = hoa.GetCompoundStructure();
+                        return new JObject
+                        {
+                            ["type_id"] = IdCompat.ToInt64(hoa.Id),
+                            ["name"] = hoa.Name,
+                            ["width_mm"] = rereadCs != null ? Math.Round(UnitKit.FeetToMm(rereadCs.GetWidth()), 1) : 0.0,
+                            ["layer_count"] = rereadCs?.LayerCount ?? 0,
+                            ["layers"] = rereadCs != null ? SerializeCompoundLayers(d, rereadCs) : new JArray()
+                        };
+                    },
+                    (d, staged) =>
+                    {
+                        var rereadHoa = RevitElementKit.ResolveElement(d, staged["type_id"]) as HostObjAttributes;
+                        var rereadCs = rereadHoa?.GetCompoundStructure();
+                        staged["verified"] = rereadCs != null && rereadCs.LayerCount == newLayers.Count;
+                        if (rereadCs != null)
+                        {
+                            staged["verified_width_mm"] = Math.Round(UnitKit.FeetToMm(rereadCs.GetWidth()), 1);
+                            staged["layers"] = SerializeCompoundLayers(d, rereadCs);
+                        }
+                        return staged;
+                    },
+                    $"Updated CompoundStructure layers on '{hoa.Name}'.");
+            }
+
             string newName = request.Arguments.Value<string>("new_name") ?? string.Empty;
-            var src = RevitElementKit.ResolveElement(doc, srcId) as ElementType;
+            var src = RevitElementKit.ResolveElement(doc, targetId) as ElementType;
             if (src == null || string.IsNullOrWhiteSpace(newName))
                 return ToolResponse.Refusal(request.RequestId, "invalid_request", "Provide valid 'source_type_id' and 'new_name'.");
 
@@ -777,6 +883,26 @@ namespace Scio.Module.Modeling
                     return staged;
                 },
                 $"Duplicated system type '{src.Name}' as '{newName}'.");
+        }
+
+        private static JArray SerializeCompoundLayers(Document doc, CompoundStructure cs)
+        {
+            var arr = new JArray();
+            var layers = cs.GetLayers();
+            for (int i = 0; i < layers.Count; i++)
+            {
+                var l = layers[i];
+                var mat = l.MaterialId != ElementId.InvalidElementId ? doc.GetElement(l.MaterialId) as Material : null;
+                arr.Add(new JObject
+                {
+                    ["index"] = i,
+                    ["function"] = l.Function.ToString(),
+                    ["thickness_mm"] = Math.Round(UnitKit.FeetToMm(l.Width), 1),
+                    ["material_id"] = IdCompat.ToInt64(l.MaterialId),
+                    ["material_name"] = mat?.Name ?? string.Empty
+                });
+            }
+            return arr;
         }
     }
 }

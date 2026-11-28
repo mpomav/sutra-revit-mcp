@@ -64,6 +64,7 @@ namespace Scio.Module.Modeling
             int applied = 0, verified = 0;
             using (var tx = new Transaction(doc, $"Sutra: join_geometry ({op})"))
             {
+                TransactionPipeline.AttachWarningCapture(tx);
                 tx.Start();
                 foreach (var (a, b, _) in pairs)
                 {
@@ -157,6 +158,7 @@ namespace Scio.Module.Modeling
             var created = new List<long>();
             using (var tx = new Transaction(doc, "Sutra: split_by_level"))
             {
+                TransactionPipeline.AttachWarningCapture(tx);
                 tx.Start();
                 foreach (var (srcId, _, segs) in plans)
                 {
@@ -256,6 +258,7 @@ namespace Scio.Module.Modeling
             var created = new List<long>();
             using (var tx = new Transaction(doc, $"Sutra: wall_finish ({op})"))
             {
+                TransactionPipeline.AttachWarningCapture(tx);
                 tx.Start();
                 foreach (Wall host in walls)
                 {

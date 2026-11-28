@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 using System.Windows;
 using Autodesk.Revit.Attributes;
@@ -29,11 +31,13 @@ namespace Scio.Revit.Ui
         public static Func<ScioBridgeStatusSnapshot>? GetStatus { get; set; }
         public static Func<bool>? TogglePause { get; set; }
         public static Func<PermissionProfile>? TogglePythonAccess { get; set; }
+        public static Func<PermissionProfile, PermissionProfile>? SetPermissionProfile { get; set; }
     }
 
     public static class ScioRibbon
     {
         public const string TabName = "Sutra";
+        private static PushButton? _statusButton;
 
         public static void Build(UIControlledApplication app)
         {
@@ -42,7 +46,7 @@ namespace Scio.Revit.Ui
             try { app.CreateRibbonTab(TabName); }
             catch { /* tab already exists */ }
 
-            RibbonPanel panel = app.CreateRibbonPanel(TabName, "SCIO Revit MCP");
+            RibbonPanel panel = app.CreateRibbonPanel(TabName, "Sutra MCP");
             string asmPath = Assembly.GetExecutingAssembly().Location;
 
             var statusData = new PushButtonData(
@@ -51,21 +55,32 @@ namespace Scio.Revit.Ui
                 asmPath,
                 typeof(ConnectionStatusCommand).FullName)
             {
-                ToolTip = "Ver estado del puente SCIO Revit MCP, módulos cargados y hash de contrato.",
+                ToolTip = "Ver estado del puente Sutra MCP, módulos cargados y hash de contrato.",
                 LongDescription = "Muestra el estado en vivo del puente MCP, la cantidad de herramientas registradas, el perfil de permisos activo y permite copiar el diagnóstico."
             };
             SetVectorIcon(statusData, RibbonIconKind.Status);
-            panel.AddItem(statusData);
+            _statusButton = panel.AddItem(statusData) as PushButton;
 
             var advData = new PulldownButtonData("ScioAdvancedOptions", "Opciones\navanzadas")
             {
-                ToolTip = "Controles locales del propietario: pausar MCP y autorización de Python.",
-                LongDescription = "Permite pausar o reanudar la ejecución remota de herramientas MCP y autorizar o revocar scio_execute_python en esta sesión."
+                ToolTip = "Controles locales del propietario: perfil de permisos, pausar MCP, Python/C# y telemetría.",
+                LongDescription = "Permite cambiar el perfil de permisos (ReadOnly / SafeWrite / UnsafeCode), pausar o reanudar MCP, autorizar ejecución dinámica y abrir la carpeta de salidas."
             };
             SetVectorIcon(advData, RibbonIconKind.Settings);
             var pulldown = panel.AddItem(advData) as PulldownButton;
             if (pulldown != null)
             {
+                var profileBtn = new PushButtonData(
+                    "ScioSelectProfile",
+                    "Perfil de permisos...",
+                    asmPath,
+                    typeof(SelectProfileCommand).FullName)
+                {
+                    ToolTip = "Elige el perfil de permisos para esta sesión: ReadOnly, SafeWrite o UnsafeCode."
+                };
+                SetVectorIcon(profileBtn, RibbonIconKind.Profile);
+                pulldown.AddPushButton(profileBtn);
+
                 var pauseBtn = new PushButtonData(
                     "ScioTogglePause",
                     "Pausar / Reanudar MCP",
@@ -79,11 +94,11 @@ namespace Scio.Revit.Ui
 
                 var pyBtn = new PushButtonData(
                     "ScioTogglePython",
-                    "Python ON / OFF",
+                    "Python / C# dinámico (ON / OFF)",
                     asmPath,
                     typeof(TogglePythonCommand).FullName)
                 {
-                    ToolTip = "Autoriza o revoca scio_execute_python (SafeWrite <-> UnsafeCode) para esta sesión."
+                    ToolTip = "Autoriza o revoca scio_execute_python y scio_execute_csharp (SafeWrite <-> UnsafeCode) con confirmación."
                 };
                 SetVectorIcon(pyBtn, RibbonIconKind.Python);
                 pulldown.AddPushButton(pyBtn);
@@ -98,6 +113,17 @@ namespace Scio.Revit.Ui
                 };
                 SetVectorIcon(telBtn, RibbonIconKind.Settings);
                 pulldown.AddPushButton(telBtn);
+
+                var outBtn = new PushButtonData(
+                    "ScioOpenOutputs",
+                    "Carpeta de salidas",
+                    asmPath,
+                    typeof(OpenOutputsCommand).FullName)
+                {
+                    ToolTip = "Abre %USERPROFILE%\\.scio\\v4\\salidas donde se guardan CSVs y reportes HTML."
+                };
+                SetVectorIcon(outBtn, RibbonIconKind.Folder);
+                pulldown.AddPushButton(outBtn);
             }
 
             panel.AddSeparator();
@@ -108,11 +134,30 @@ namespace Scio.Revit.Ui
                 asmPath,
                 typeof(AboutCommand).FullName)
             {
-                ToolTip = "Información de Sutra — SCIO Revit MCP, versión, licencia y módulos activos.",
+                ToolTip = "Información de Sutra — Revit MCP, versión, licencia y módulos activos.",
                 LongDescription = "Abre la ventana Acerca de con la versión instalada, información de SCIO DC, estado del puente y enlace a sciodc.com."
             };
             SetVectorIcon(aboutData, RibbonIconKind.About);
             panel.AddItem(aboutData);
+        }
+
+        internal static void RefreshStatusIndicator()
+        {
+            if (_statusButton == null) return;
+            try
+            {
+                var snap = ScioBridgeUiHooks.GetStatus?.Invoke();
+                if (snap == null) return;
+                RibbonIconKind kind = snap.IsPaused
+                    ? RibbonIconKind.StatusPaused
+                    : (snap.PermissionProfile == PermissionProfile.UnsafeCode ? RibbonIconKind.StatusUnsafe : RibbonIconKind.Status);
+                _statusButton.LargeImage = RibbonIconRenderer.Render(kind, 32);
+                _statusButton.Image = RibbonIconRenderer.Render(kind, 16);
+                _statusButton.ItemText = snap.IsPaused
+                    ? "MCP\nPAUSADO"
+                    : (snap.PermissionProfile == PermissionProfile.UnsafeCode ? "MCP\nUnsafeCode" : "Estado de\nconexión");
+            }
+            catch { }
         }
 
         private static void SetVectorIcon(ButtonData data, RibbonIconKind kind)
@@ -181,6 +226,7 @@ namespace Scio.Revit.Ui
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             bool paused = ScioBridgeUiHooks.TogglePause?.Invoke() ?? false;
+            ScioRibbon.RefreshStatusIndicator();
             IntPtr owner = commandData?.Application?.MainWindowHandle ?? IntPtr.Zero;
             ScioDialog.ShowMessage(
                 owner,
@@ -195,21 +241,126 @@ namespace Scio.Revit.Ui
     }
 
     [Transaction(TransactionMode.ReadOnly)]
+    public sealed class SelectProfileCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            var snap = ScioBridgeUiHooks.GetStatus?.Invoke() ?? new ScioBridgeStatusSnapshot();
+            IntPtr owner = commandData?.Application?.MainWindowHandle ?? IntPtr.Zero;
+
+            var choices = new[]
+            {
+                new ScioDialogChoice(
+                    "ReadOnly",
+                    "Solo lectura (ReadOnly)",
+                    "Solo permite inspección, consultas, auditorías y extracción de datos. Bloquea toda escritura en el modelo.",
+                    ScioTheme.Glyph.Lock),
+                new ScioDialogChoice(
+                    "SafeWrite",
+                    "Escritura segura (SafeWrite — recomendado)",
+                    "Permite herramientas tipadas de Sutra con dry_run y verificación post-commit. Bloquea ejecución de Python/C# arbitrario.",
+                    ScioTheme.Glyph.Shield),
+                new ScioDialogChoice(
+                    "UnsafeCode",
+                    "Ejecución dinámica (UnsafeCode — avanzado)",
+                    "Habilita además scio_execute_python y scio_execute_csharp en esta sesión de Revit. Requiere confirmación explícita.",
+                    ScioTheme.Glyph.Code)
+            };
+
+            string? picked = ScioDialog.ShowChoices(
+                owner,
+                "Perfil de permisos",
+                "SUTRA · SEGURIDAD LOCAL",
+                "Elige el nivel de permisos para esta sesión de Revit",
+                "El cambio aplica de inmediato en la sesión actual sin reiniciar Revit.",
+                choices,
+                snap.PermissionProfile.ToString(),
+                "Cancelar");
+
+            if (string.IsNullOrWhiteSpace(picked)) return Result.Succeeded;
+
+            PermissionProfile target = picked switch
+            {
+                "ReadOnly" => PermissionProfile.ReadOnly,
+                "UnsafeCode" => PermissionProfile.UnsafeCode,
+                _ => PermissionProfile.SafeWrite
+            };
+
+            if (target == PermissionProfile.UnsafeCode && snap.PermissionProfile != PermissionProfile.UnsafeCode)
+            {
+                if (!ConfirmUnsafeCode(owner)) return Result.Succeeded;
+            }
+
+            if (ScioBridgeUiHooks.SetPermissionProfile != null)
+            {
+                ScioBridgeUiHooks.SetPermissionProfile(target);
+            }
+            else if (target == PermissionProfile.UnsafeCode != (snap.PermissionProfile == PermissionProfile.UnsafeCode))
+            {
+                ScioBridgeUiHooks.TogglePythonAccess?.Invoke();
+            }
+
+            ScioRibbon.RefreshStatusIndicator();
+            return Result.Succeeded;
+        }
+
+        internal static bool ConfirmUnsafeCode(IntPtr owner)
+        {
+            return ScioDialog.ShowConfirm(
+                owner: owner,
+                title: "Autorizar ejecución dinámica",
+                eyebrow: "SUTRA · SEGURIDAD LOCAL",
+                headline: "Estás a punto de habilitar UnsafeCode en esta sesión de Revit",
+                body: "El perfil UnsafeCode autoriza tanto scio_execute_python (IronPython) como scio_execute_csharp (Roslyn C#) con acceso completo al API de Autodesk Revit y al usuario local de Windows. Actívalo solo si confías en el cliente IA conectado.",
+                primaryLabel: "Habilitar UnsafeCode",
+                cancelLabel: "Mantener SafeWrite",
+                verificationCheckboxText: "Entiendo que se habilitarán Python y C# dinámicos en esta sesión de Revit.",
+                danger: true,
+                glyph: ScioTheme.Glyph.Warning);
+        }
+    }
+
+    [Transaction(TransactionMode.ReadOnly)]
     public sealed class TogglePythonCommand : IExternalCommand
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
-            var profile = ScioBridgeUiHooks.TogglePythonAccess?.Invoke() ?? PermissionProfile.SafeWrite;
-            bool enabled = profile == PermissionProfile.UnsafeCode;
+            var snap = ScioBridgeUiHooks.GetStatus?.Invoke() ?? new ScioBridgeStatusSnapshot();
             IntPtr owner = commandData?.Application?.MainWindowHandle ?? IntPtr.Zero;
+
+            if (snap.PermissionProfile != PermissionProfile.UnsafeCode)
+            {
+                if (!SelectProfileCommand.ConfirmUnsafeCode(owner))
+                    return Result.Succeeded;
+            }
+
+            var profile = ScioBridgeUiHooks.TogglePythonAccess?.Invoke() ?? PermissionProfile.SafeWrite;
+            ScioRibbon.RefreshStatusIndicator();
+            bool enabled = profile == PermissionProfile.UnsafeCode;
             ScioDialog.ShowMessage(
                 owner,
-                "Autorización de Python",
-                enabled ? "Python AUTORIZADO (UnsafeCode)" : "Python DESACTIVADO (SafeWrite)",
+                "Autorización de ejecución dinámica",
+                enabled ? "Python y C# AUTORIZADOS (UnsafeCode)" : "Ejecución dinámica DESACTIVADA (SafeWrite)",
                 enabled
-                    ? "scio_execute_python está habilitado para esta sesión de Revit. Puedes revocarlo en cualquier momento desde Opciones avanzadas."
-                    : "Solo las herramientas tipadas están habilitadas. La ejecución arbitraria de Python queda bloqueada.",
+                    ? "scio_execute_python y scio_execute_csharp están habilitados para esta sesión de Revit. Puedes revocarlos en cualquier momento desde Opciones avanzadas."
+                    : "Solo las herramientas tipadas están habilitadas. La ejecución arbitraria de Python y C# queda bloqueada.",
                 isError: false);
+            return Result.Succeeded;
+        }
+    }
+
+    [Transaction(TransactionMode.ReadOnly)]
+    public sealed class OpenOutputsCommand : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            try
+            {
+                string dir = Path.Combine(ScioRuntimePaths.DataRoot, "salidas");
+                Directory.CreateDirectory(dir);
+                Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
+            }
+            catch { }
             return Result.Succeeded;
         }
     }

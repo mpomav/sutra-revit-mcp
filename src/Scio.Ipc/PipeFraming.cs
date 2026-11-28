@@ -14,9 +14,15 @@ namespace Scio.Ipc
     {
         public const int MaxFrameBytes = 64 * 1024 * 1024; // 64 MB
 
+        private static readonly JsonSerializerSettings SafeJsonSettings = new JsonSerializerSettings
+        {
+            MaxDepth = 64,
+            TypeNameHandling = TypeNameHandling.None
+        };
+
         public static async Task WriteMessageAsync<T>(Stream stream, T payload, CancellationToken ct)
         {
-            string json = JsonConvert.SerializeObject(payload, Formatting.None);
+            string json = JsonConvert.SerializeObject(payload, Formatting.None, SafeJsonSettings);
             byte[] body = Encoding.UTF8.GetBytes(json);
             if (body.Length > MaxFrameBytes)
                 throw new InvalidOperationException($"IPC payload exceeds {MaxFrameBytes} bytes.");
@@ -46,7 +52,7 @@ namespace Scio.Ipc
                 throw new EndOfStreamException("Unexpected EOF while reading IPC frame body.");
 
             string json = Encoding.UTF8.GetString(body);
-            return JsonConvert.DeserializeObject<T>(json);
+            return JsonConvert.DeserializeObject<T>(json, SafeJsonSettings);
         }
 
         private static async Task<bool> ReadExactAsync(Stream stream, byte[] buffer, int count, CancellationToken ct)

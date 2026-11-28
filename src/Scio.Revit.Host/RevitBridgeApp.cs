@@ -26,6 +26,7 @@ namespace Scio.Revit.Host
             public ToolRequest Request { get; }
             public TaskCompletionSource<ToolResponse> Completion { get; }
             public Stopwatch EnqueuedAt { get; } = Stopwatch.StartNew();
+            public CancellationTokenRegistration CancelRegistration { get; set; }
 
             public PendingWork(ToolRequest request)
             {
@@ -92,13 +93,12 @@ namespace Scio.Revit.Host
             }
 
             var work = new PendingWork(request);
-            _queue.Enqueue(work);
-            _externalEvent.Raise();
-
             if (ct.CanBeCanceled)
             {
-                ct.Register(() => work.Completion.TrySetCanceled(ct));
+                work.CancelRegistration = ct.Register(() => work.Completion.TrySetCanceled(ct));
             }
+            _queue.Enqueue(work);
+            _externalEvent.Raise();
 
             return work.Completion.Task;
         }
@@ -108,6 +108,7 @@ namespace Scio.Revit.Host
             while (_queue.TryDequeue(out var work))
             {
                 Interlocked.Decrement(ref _queuedCount);
+                work.CancelRegistration.Dispose();
                 if (work.Completion.Task.IsCanceled) continue;
 
                 long queuedMs = work.EnqueuedAt.ElapsedMilliseconds;
@@ -277,6 +278,11 @@ namespace Scio.Revit.Host
                 _dispatcher.PermissionProfile = _dispatcher.PermissionProfile == PermissionProfile.UnsafeCode
                     ? PermissionProfile.SafeWrite
                     : PermissionProfile.UnsafeCode;
+                return _dispatcher.PermissionProfile;
+            };
+            ScioBridgeUiHooks.SetPermissionProfile = profile =>
+            {
+                _dispatcher.PermissionProfile = profile;
                 return _dispatcher.PermissionProfile;
             };
             ScioRibbon.Build(application);

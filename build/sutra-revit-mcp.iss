@@ -7,10 +7,10 @@
 #define AppPublisher   "SCIO DC"
 #define AppUrl         "https://github.com/mpomav/sutra-revit-mcp"
 #ifndef AppVersion
-  #define AppVersion "1.3.0"
+  #define AppVersion "1.4.0"
 #endif
 #ifndef StageDir
-  #define StageDir "..\dist\sutra-1.3.0"
+  #define StageDir "..\dist\sutra-1.4.0"
 #endif
 
 [Setup]
@@ -35,7 +35,7 @@ WizardStyle=modern
 SetupIconFile=assets\sutra-setup.ico
 WizardImageFile=assets\sutra-wizard-100.bmp,assets\sutra-wizard-125.bmp,assets\sutra-wizard-150.bmp,assets\sutra-wizard-175.bmp,assets\sutra-wizard-200.bmp,assets\sutra-wizard-225.bmp,assets\sutra-wizard-250.bmp
 WizardImageStretch=no
-WizardSmallImageFile=assets\wizard-small.bmp
+WizardSmallImageFile=assets\sutra-small-100.bmp,assets\sutra-small-125.bmp,assets\sutra-small-150.bmp,assets\sutra-small-175.bmp,assets\sutra-small-200.bmp,assets\sutra-small-225.bmp,assets\sutra-small-250.bmp
 PrivilegesRequired=lowest
 UninstallDisplayName={#AppName} {#AppVersion}
 UninstallDisplayIcon={app}\server\scio-revit-mcp.exe
@@ -297,12 +297,51 @@ begin
   InstalledYearsList := InstalledYearsList + YearStr;
 end;
 
+function IsCadYearInstalled(const YearStr, SeriesId: string): Boolean;
+var
+  Subkeys: TArrayOfString;
+  I: Integer;
+  RegRoot, AcadLoc: string;
+begin
+  Result := False;
+
+  { 1. Default Program Files installation }
+  if FileExists('C:\Program Files\Autodesk\AutoCAD ' + YearStr + '\acdbmgd.dll') then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  { 2. Custom drive / location registered by AutoCAD or Civil 3D in HKLM }
+  RegRoot := 'SOFTWARE\Autodesk\AutoCAD\' + SeriesId;
+  if RegGetSubkeyNames(HKLM64, RegRoot, Subkeys) then
+  begin
+    for I := 0 to GetArrayLength(Subkeys) - 1 do
+    begin
+      if RegQueryStringValue(HKLM64, RegRoot + '\' + Subkeys[I], 'AcadLocation', AcadLoc) and
+         (AcadLoc <> '') and
+         FileExists(AddBackslash(AcadLoc) + 'acdbmgd.dll') then
+      begin
+        Result := True;
+        Exit;
+      end;
+    end;
+  end;
+
+  { 3. User profile AutoCAD release key (covers alternate installs/verticals) }
+  if RegKeyExists(HKCU, RegRoot) then
+  begin
+    Result := True;
+    Exit;
+  end;
+end;
+
 procedure DeployCadBundle;
 var
   CadYears: array[0..3] of string;
   SeriesIds: array[0..3] of string;
   I: Integer;
-  YearStr, CadApiPath, SrcDll, BundleDir, DestDir, DestDll, ComponentsXml, PkgXml: string;
+  YearStr, SrcDll, BundleDir, DestDir, DestDll, ComponentsXml, PkgXml: string;
 begin
   InstalledCadYearsList := '';
   CadYears[0] := '2023'; SeriesIds[0] := 'R24.2';
@@ -316,9 +355,8 @@ begin
   for I := 0 to 3 do
   begin
     YearStr := CadYears[I];
-    CadApiPath := 'C:\Program Files\Autodesk\AutoCAD ' + YearStr + '\acdbmgd.dll';
     SrcDll := ExpandConstant('{tmp}\SutraCadAddins\') + YearStr + '\Scio.Cad.dll';
-    if FileExists(CadApiPath) and FileExists(SrcDll) then
+    if IsCadYearInstalled(YearStr, SeriesIds[I]) and FileExists(SrcDll) then
     begin
       DestDir := AddBackslash(BundleDir) + 'Contents\' + YearStr;
       if DirExists(DestDir) then DelTree(DestDir, True, True, True);

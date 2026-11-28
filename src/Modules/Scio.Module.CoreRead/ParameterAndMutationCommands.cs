@@ -147,18 +147,35 @@ namespace Scio.Module.CoreRead
                         string before = RevitElementKit.ReadParameterDisplay(p);
                         if (!RevitElementKit.TrySetParameter(p!, item["value"], out string err, unit))
                         {
-                            errors.Add(new JObject { ["element_id"] = IdCompat.ToInt64(el.Id), ["parameter"] = paramName, ["error"] = err });
+                            var errObj = new JObject { ["element_id"] = IdCompat.ToInt64(el.Id), ["parameter"] = paramName, ["error"] = err };
+                            if (el is Floor && err.IndexOf("read-only", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                                (paramName.IndexOf("Height Offset", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 paramName.IndexOf("Desfase de altura", StringComparison.OrdinalIgnoreCase) >= 0))
+                            {
+                                errObj["hint"] = "Sloped floors have a read-only Height Offset From Level; use scio_transform_elements (action:'move', delta_mm:[0,0,dz]) instead.";
+                            }
+                            errors.Add(errObj);
                             continue;
                         }
 
-                        applied.Add(new JObject
+                        var rowObj = new JObject
                         {
                             ["element_id"] = IdCompat.ToInt64(el.Id),
                             ["parameter"] = paramName,
                             ["include_type"] = includeType,
                             ["before"] = before,
                             ["after"] = RevitElementKit.ReadParameterDisplay(p)
-                        });
+                        };
+                        if (string.IsNullOrWhiteSpace(unit) && p != null && p.StorageType == StorageType.Double && item["value"]?.Type != JTokenType.String)
+                        {
+                            try
+                            {
+                                if (p.Definition.GetDataType() == SpecTypeId.Length)
+                                    rowObj["unit_warning"] = "No 'unit' specified for Length parameter; raw number was interpreted as Revit internal feet. Pass unit:'mm' or 'm' to avoid 0.3048x scaling errors.";
+                            }
+                            catch { }
+                        }
+                        applied.Add(rowObj);
                     }
                     return new JObject
                     {
@@ -319,13 +336,22 @@ namespace Scio.Module.CoreRead
                 dryRun,
                 d =>
                 {
+                    var requestedSet = new HashSet<long>(targetIds.Select(IdCompat.ToInt64));
                     var deleted = d.Delete(targetIds);
-                    return new JObject
+                    var dependentIds = deleted
+                        .Select(IdCompat.ToInt64)
+                        .Where(id => !requestedSet.Contains(id))
+                        .ToList();
+                    var payload = new JObject
                     {
                         ["requested_count"] = targetIds.Count,
                         ["total_deleted_including_dependents"] = deleted.Count,
+                        ["deleted_dependents_count"] = dependentIds.Count,
                         ["deleted_ids"] = new JArray(deleted.Take(200).Select(IdCompat.ToInt64))
                     };
+                    if (dependentIds.Count > 0)
+                        payload["deleted_dependent_ids"] = new JArray(dependentIds.Take(100));
+                    return payload;
                 },
                 (d, staged) =>
                 {

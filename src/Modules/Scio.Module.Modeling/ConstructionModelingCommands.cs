@@ -132,15 +132,24 @@ namespace Scio.Module.Modeling
                 d =>
                 {
                     var created = new JArray();
+                    var skippedSingleLayer = new JArray();
                     var existingTypes = new FilteredElementCollector(d).OfClass(typeof(FloorType)).Cast<FloorType>()
                         .ToDictionary(ft => ft.Name, ft => ft, StringComparer.OrdinalIgnoreCase);
 
                     foreach (var fl in floors)
                     {
                         var cs = fl.FloorType.GetCompoundStructure();
-                        if (cs == null) continue;
+                        if (cs == null)
+                        {
+                            skippedSingleLayer.Add(IdCompat.ToInt64(fl.Id));
+                            continue;
+                        }
                         var layers = cs.GetLayers().Where(l => l.Width > 1e-4).ToList();
-                        if (layers.Count < 2) continue;
+                        if (layers.Count < 2)
+                        {
+                            skippedSingleLayer.Add(IdCompat.ToInt64(fl.Id));
+                            continue;
+                        }
 
                         var sketch = d.GetElement(fl.SketchId) as Sketch;
                         if (sketch == null) continue;
@@ -159,6 +168,7 @@ namespace Scio.Module.Modeling
                                 layerFloorType = fl.FloorType.Duplicate(typeName) as FloorType
                                     ?? throw new InvalidOperationException($"Failed to duplicate FloorType '{typeName}'.");
                                 var singleCs = CompoundStructure.CreateSingleLayerCompoundStructure(layer.Function, layer.Width, layer.MaterialId);
+                                singleCs.EndCap = EndCapCondition.NoEndCap;
                                 layerFloorType.SetCompoundStructure(singleCs);
                                 existingTypes[typeName] = layerFloorType;
                             }
@@ -179,7 +189,19 @@ namespace Scio.Module.Modeling
                         }
                     }
 
-                    return new JObject { ["source_floors"] = floors.Count, ["created_layer_floors"] = created.Count, ["items"] = created };
+                    var payload = new JObject
+                    {
+                        ["source_floors"] = floors.Count,
+                        ["created_layer_floors"] = created.Count,
+                        ["skipped_single_layer_count"] = skippedSingleLayer.Count,
+                        ["items"] = created
+                    };
+                    if (skippedSingleLayer.Count > 0)
+                    {
+                        payload["skipped_single_layer_floor_ids"] = skippedSingleLayer;
+                        payload["note"] = $"{skippedSingleLayer.Count} floor(s) had fewer than 2 compound layers and were skipped.";
+                    }
+                    return payload;
                 },
                 (d, staged) => staged,
                 $"Split {floors.Count} multilayer slab(s).");

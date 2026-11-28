@@ -164,7 +164,7 @@ namespace Scio.Revit.Ui
             {
                 if (updateBtn == null) return;
                 updateBtn.IsEnabled = false;
-                updateBtn.Content = "Buscando...";
+                ScioTheme.SetButtonLabel(updateBtn, "Buscando...");
                 var dispatcher = win.Dispatcher;
                 Task.Run(async () =>
                 {
@@ -174,18 +174,18 @@ namespace Scio.Revit.Ui
                         if (!win.IsLoaded) return;
                         if (info == null)
                         {
-                            updateBtn.Content = "Sin conexión";
+                            ScioTheme.SetButtonLabel(updateBtn, "Sin conexión");
                             updateBtn.IsEnabled = true;
                         }
                         else if (info.UpdateAvailable)
                         {
-                            updateBtn.Content = "Nueva v" + info.LatestVersion;
+                            ScioTheme.SetButtonLabel(updateBtn, "Nueva v" + info.LatestVersion);
                             updateBtn.IsEnabled = true;
                             UpdateAvailableDialog.Show(owner, info);
                         }
                         else
                         {
-                            updateBtn.Content = "Al día (v" + info.CurrentVersion + ")";
+                            ScioTheme.SetButtonLabel(updateBtn, "Al día (v" + info.CurrentVersion + ")");
                             updateBtn.IsEnabled = false;
                         }
                     }));

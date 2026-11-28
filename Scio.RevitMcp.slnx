@@ -7,6 +7,7 @@
     <Project Path="src/Scio.Revit.CSharp/Scio.Revit.CSharp.csproj" />
     <Project Path="src/Scio.Revit.Sdk/Scio.Revit.Sdk.csproj" />
     <Project Path="src/Scio.Revit.Ui/Scio.Revit.Ui.csproj" />
+    <Project Path="src/Scio.Cad/Scio.Cad.csproj" />
     <Project Path="src/Scio.Server/Scio.Server.csproj" />
   </Folder>
   <Folder Name="/src/Modules/">

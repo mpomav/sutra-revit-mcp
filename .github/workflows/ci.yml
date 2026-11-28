@@ -36,6 +36,31 @@ jobs:
         shell: pwsh
         run: pwsh -File build/audit-clean-room.ps1
 
+      - name: Dependency vulnerability check
+        run: |
+          dotnet list src/Scio.Abstractions/Scio.Abstractions.csproj package --vulnerable --include-transitive
+          dotnet list src/Scio.Server/Scio.Server.csproj package --vulnerable --include-transitive
+
+  build-cad-matrix:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cad_year: [2023, 2024, 2025, 2026]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build Scio.Cad ${{ matrix.cad_year }}
+        run: dotnet build src/Scio.Cad/Scio.Cad.csproj -c Release -p:CadYear=${{ matrix.cad_year }} -p:UseLocalCadApi=false --nologo
+
   build-revit-matrix:
     runs-on: windows-latest
     strategy:

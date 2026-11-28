@@ -84,7 +84,7 @@ namespace Scio.Revit.Ui
             {
                 _fieldsPanel.Children.Add(new Expander
                 {
-                    Header = ScioTheme.Text((_es ? "MÃ¡s opciones (" : "More options (") + optionalHost.Children.Count + ")", 11, ScioTheme.Muted),
+                    Header = ScioTheme.Text((_es ? "Más opciones (" : "More options (") + optionalHost.Children.Count + ")", 11, ScioTheme.Muted),
                     Content = optionalHost,
                     Margin = new Thickness(0, 2, 0, 4),
                     Foreground = ScioTheme.Muted
@@ -131,7 +131,7 @@ namespace Scio.Revit.Ui
             if (_rawToggle.IsChecked == true)
             {
                 try { return (JObject.Parse(string.IsNullOrWhiteSpace(_raw.Text) ? "{}" : _raw.Text), null); }
-                catch (Exception ex) { return (null, (_es ? "JSON invÃ¡lido: " : "Invalid JSON: ") + ex.Message); }
+                catch (Exception ex) { return (null, (_es ? "JSON inválido: " : "Invalid JSON: ") + ex.Message); }
             }
             return CollectFields();
         }
@@ -196,7 +196,7 @@ namespace Scio.Revit.Ui
                 var tb = ScioTheme.Input();
                 tb.Text = preset is JArray pa ? string.Join(", ", pa.Select(t => t.ToString())) : (preset?.Type == JTokenType.String ? preset.ToString() : "");
                 var host = new DockPanel();
-                var useSel = ScioTheme.Button(_es ? "Usar selecciÃ³n" : "Use selection", ScioTheme.Glyph.Select, ScioTheme.ButtonKind.Chip, () =>
+                var useSel = ScioTheme.Button(_es ? "Usar selección" : "Use selection", ScioTheme.Glyph.Select, ScioTheme.ButtonKind.Chip, () =>
                 {
                     List<long> sel = _selection?.Invoke() ?? new List<long>();
                     tb.Text = string.Join(", ", sel);
@@ -324,7 +324,7 @@ namespace Scio.Revit.Ui
                     string t = ((WpfTextBox)f.Control).Text?.Trim().Replace(',', '.') ?? "";
                     if (t.Length == 0) return null;
                     if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
-                        return _es ? "debe ser un nÃºmero." : "must be a number.";
+                        return _es ? "debe ser un número." : "must be a number.";
                     value = d; return null;
                 }
                 case "string":
@@ -338,7 +338,7 @@ namespace Scio.Revit.Ui
                     string t = ((WpfTextBox)f.Control).Text?.Trim() ?? "";
                     if (t.Length == 0) return null;
                     try { value = JToken.Parse(t); return null; }
-                    catch (Exception ex) { return (_es ? "JSON invÃ¡lido: " : "invalid JSON: ") + ex.Message; }
+                    catch (Exception ex) { return (_es ? "JSON inválido: " : "invalid JSON: ") + ex.Message; }
                 }
             }
         }

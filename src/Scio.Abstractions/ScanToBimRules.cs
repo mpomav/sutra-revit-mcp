@@ -71,7 +71,7 @@ namespace Scio.Abstractions
             double minZ = double.MaxValue, maxZ = double.MinValue;
             for (int i = 0; i < total; i++)
             {
-                double z = zMm[i];
+                double z = zMm![i];
                 if (z < minZ) minZ = z;
                 if (z > maxZ) maxZ = z;
             }
@@ -87,9 +87,9 @@ namespace Scio.Abstractions
             var sums = new double[binCount];
             for (int i = 0; i < total; i++)
             {
-                int b = Math.Min(binCount - 1, Math.Max(0, (int)Math.Floor((zMm[i] - minZ) / binSizeMm)));
+                int b = Math.Min(binCount - 1, Math.Max(0, (int)Math.Floor((zMm![i] - minZ) / binSizeMm)));
                 counts[b]++;
-                sums[b] += zMm[i];
+                sums[b] += zMm![i];
             }
 
             // 3-bin triangular smoothing to avoid split peaks at bin edges.
@@ -148,7 +148,7 @@ namespace Scio.Abstractions
                 var devs = new List<double>();
                 for (int i = 0; i < total; i++)
                 {
-                    double z = zMm[i];
+                    double z = zMm![i];
                     if (z >= loZ && z <= hiZ) devs.Add(Math.Abs(z - meanZ));
                 }
                 devs.Sort();
@@ -252,7 +252,7 @@ namespace Scio.Abstractions
             var voxels = new Dictionary<(int, int), (double sx, double sy, int n)>();
             for (int i = 0; i < rawCount; i++)
             {
-                double[] p = xyMm[i];
+                double[] p = xyMm![i];
                 if (p == null || p.Length < 2) continue;
                 int ix = (int)Math.Floor(p[0] / voxelMm);
                 int iy = (int)Math.Floor(p[1] / voxelMm);
@@ -539,9 +539,9 @@ namespace Scio.Abstractions
                 };
             }
 
-            if (k == "plane") return FitPlane(xyzMm, toleranceMm);
-            if (k == "column") return FitColumn(xyzMm, toleranceMm);
-            return FitCylinder(xyzMm, toleranceMm);
+            if (k == "plane") return FitPlane(xyzMm!, toleranceMm);
+            if (k == "column") return FitColumn(xyzMm!, toleranceMm);
+            return FitCylinder(xyzMm!, toleranceMm);
         }
 
         private static JObject FitPlane(IList<double[]> pts, double toleranceMm)

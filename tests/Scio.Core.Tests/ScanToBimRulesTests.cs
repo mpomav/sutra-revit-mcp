@@ -38,11 +38,11 @@ namespace Scio.Core.Tests
 
             Assert.Equal("levels_detected", res.Value<string>("verdict"));
             Assert.Equal(3, res.Value<int>("levels_detected"));
-            var levels = (JArray)res["levels"];
+            var levels = (JArray)res["levels"]!;
             Assert.InRange(levels[0].Value<double>("elevation_mm"), -15, 15);
             Assert.InRange(levels[1].Value<double>("elevation_mm"), 2985, 3015);
             Assert.InRange(levels[2].Value<double>("elevation_mm"), 6185, 6215);
-            Assert.Equal("scio_create_elements", res["next_arguments"].Value<string>("tool"));
+            Assert.Equal("scio_create_elements", res["next_arguments"]!.Value<string>("tool"));
         }
 
         [Fact]
@@ -65,8 +65,8 @@ namespace Scio.Core.Tests
             Assert.Equal(1, res.Value<int>("double_face_walls"));
             Assert.True(res.Value<int>("single_face_walls") >= 2);
 
-            var walls = (JArray)res["wall_candidates"];
-            var doubleWall = (JObject)walls[0];
+            var walls = (JArray)res["wall_candidates"]!;
+            var doubleWall = (JObject)walls[0]!;
             Assert.Equal("double_face", doubleWall.Value<string>("confidence"));
             Assert.InRange(doubleWall.Value<double>("estimated_thickness_mm"), 190, 210);
             Assert.InRange(doubleWall.Value<double>("length_mm"), 3900, 4050);

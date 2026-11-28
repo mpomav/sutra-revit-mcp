@@ -52,6 +52,11 @@ namespace Scio.Revit.Python
 
             if (!string.IsNullOrWhiteSpace(input.CodePath))
             {
+                string? pathProblem = ScioRuntimePaths.ValidateLocalOutputPath(input.CodePath, "code_path");
+                if (pathProblem != null)
+                    return ToolResponse.Refusal(request.RequestId, "invalid_code_path", pathProblem);
+                if (!input.CodePath!.EndsWith(".py", StringComparison.OrdinalIgnoreCase))
+                    return ToolResponse.Refusal(request.RequestId, "invalid_code_path", "code_path must point to a local .py script file.");
                 if (!File.Exists(input.CodePath))
                     return ToolResponse.Refusal(request.RequestId, "file_not_found", $"Script file not found: {input.CodePath}");
                 code = File.ReadAllText(input.CodePath, Encoding.UTF8);
@@ -75,31 +80,43 @@ namespace Scio.Revit.Python
                 using (var stdout = new MemoryStream())
                 using (var stderr = new MemoryStream())
                 {
-                    _engine.Runtime.IO.SetOutput(stdout, Encoding.UTF8);
-                    _engine.Runtime.IO.SetErrorOutput(stderr, Encoding.UTF8);
-
-                    var source = _engine.CreateScriptSourceFromString(code!);
-                    source.Execute(scope);
-
-                    string outText = Encoding.UTF8.GetString(stdout.ToArray());
-                    string errText = Encoding.UTF8.GetString(stderr.ToArray());
-
-                    object? rawOutput = scope.ContainsVariable("__output__") ? scope.GetVariable("__output__") : null;
-                    JToken? structuredOutput = rawOutput != null ? JToken.FromObject(rawOutput) : null;
-
-                    var data = new JObject
+                    try
                     {
-                        ["stdout"] = outText,
-                        ["stderr"] = errText,
-                        ["output"] = structuredOutput
-                    };
+                        _engine.Runtime.IO.SetOutput(stdout, Encoding.UTF8);
+                        _engine.Runtime.IO.SetErrorOutput(stderr, Encoding.UTF8);
 
-                    return ToolResponse.Success(
-                        request.RequestId,
-                        data,
-                        "Python script completed (self-reported).",
-                        VerificationStatus.SelfReportedVerified,
-                        hostVerified: false);
+                        var source = _engine.CreateScriptSourceFromString(code!);
+                        source.Execute(scope);
+
+                        string outText = Encoding.UTF8.GetString(stdout.ToArray());
+                        string errText = Encoding.UTF8.GetString(stderr.ToArray());
+
+                        object? rawOutput = scope.ContainsVariable("__output__") ? scope.GetVariable("__output__") : null;
+                        JToken? structuredOutput = rawOutput != null ? JToken.FromObject(rawOutput) : null;
+
+                        var data = new JObject
+                        {
+                            ["stdout"] = outText,
+                            ["stderr"] = errText,
+                            ["output"] = structuredOutput
+                        };
+
+                        return ToolResponse.Success(
+                            request.RequestId,
+                            data,
+                            "Python script completed (self-reported).",
+                            VerificationStatus.SelfReportedVerified,
+                            hostVerified: false);
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            _engine.Runtime.IO.SetOutput(Stream.Null, Encoding.UTF8);
+                            _engine.Runtime.IO.SetErrorOutput(Stream.Null, Encoding.UTF8);
+                        }
+                        catch { }
+                    }
                 }
             }
             catch (Exception ex)

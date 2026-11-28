@@ -200,7 +200,7 @@ namespace Scio.Revit.Sdk
                             error = $"Value '{value}' is not a valid number.";
                             return false;
                         }
-                        double internalVal = ConvertDoubleToInternal(dv, doubleUnit);
+                        double internalVal = ConvertDoubleToInternal(p, dv, doubleUnit);
                         return p.Set(internalVal);
 
                     case StorageType.ElementId:
@@ -221,14 +221,33 @@ namespace Scio.Revit.Sdk
             }
         }
 
-        private static double ConvertDoubleToInternal(double value, string? unit)
+        private static double ConvertDoubleToInternal(Parameter p, double value, string? unit)
         {
             if (string.IsNullOrWhiteSpace(unit)) return value;
-            switch (unit!.Trim().ToLowerInvariant())
+            string u = unit!.Trim().ToLowerInvariant();
+            if (u == "auto" || u == "metric")
+            {
+                try
+                {
+                    ForgeTypeId dt = p.Definition.GetDataType();
+                    if (dt == SpecTypeId.Length) return UnitKit.MmToFeet(value);
+                    if (dt == SpecTypeId.Angle) return UnitKit.DegToRad(value);
+                    if (dt == SpecTypeId.Area) return UnitKit.SqMToSqFeet(value);
+                    if (dt == SpecTypeId.Volume) return UnitKit.CuMToCuFeet(value);
+                }
+                catch { }
+                return value;
+            }
+            switch (u)
             {
                 case "mm": return UnitKit.MmToFeet(value);
                 case "cm": return UnitKit.MmToFeet(value * 10.0);
                 case "m": return UnitKit.MmToFeet(value * 1000.0);
+                case "ft":
+                case "feet":
+                case "internal": return value;
+                case "in":
+                case "inch": return value / 12.0;
                 case "deg":
                 case "degrees": return UnitKit.DegToRad(value);
                 case "m2":

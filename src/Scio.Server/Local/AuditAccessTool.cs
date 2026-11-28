@@ -34,7 +34,7 @@ namespace Scio.Server
 
         public static JObject HandleRequestPythonAccess(JObject args, CancellationToken ct)
         {
-            string op = (args?.Value<string>("operation") ?? "status").Trim().ToLowerInvariant();
+            string op = (args?.Value<string>("operation") ?? args?.Value<string>("action") ?? "status").Trim().ToLowerInvariant();
             bool authorized = IsPythonAuthorized();
 
             if (op == "status")

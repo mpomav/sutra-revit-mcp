@@ -49,8 +49,8 @@ namespace Scio.Core.Tests
                 ""draft"": false,
                 ""prerelease"": false,
                 ""assets"": [
-                    { ""name"": ""sutra-revit-mcp-1.4.0-win-x64.zip"", ""browser_download_url"": ""https://example.invalid/sutra.zip"" },
-                    { ""name"": ""sutra-revit-mcp-1.4.0-setup.exe"", ""browser_download_url"": ""https://example.invalid/sutra-revit-mcp-1.4.0-setup.exe"" }
+                    { ""name"": ""sutra-revit-mcp-1.4.0-win-x64.zip"", ""browser_download_url"": ""https://github.com/mpomav/sutra-revit-mcp/releases/download/v1.4.0/sutra-revit-mcp-1.4.0-win-x64.zip"" },
+                    { ""name"": ""sutra-revit-mcp-1.4.0-setup.exe"", ""browser_download_url"": ""https://github.com/mpomav/sutra-revit-mcp/releases/download/v1.4.0/sutra-revit-mcp-1.4.0-setup.exe"" }
                 ]
             }";
 
@@ -64,7 +64,7 @@ namespace Scio.Core.Tests
             Assert.NotNull(first);
             Assert.True(first!.UpdateAvailable);
             Assert.Equal("1.4.0", first.LatestVersion);
-            Assert.Equal("https://example.invalid/sutra-revit-mcp-1.4.0-setup.exe", first.DownloadUrl);
+            Assert.Equal("https://github.com/mpomav/sutra-revit-mcp/releases/download/v1.4.0/sutra-revit-mcp-1.4.0-setup.exe", first.DownloadUrl);
             Assert.Equal(1, fetchCount);
 
             // Second call within 24h should hit disk cache, not network

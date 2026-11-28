@@ -158,6 +158,7 @@ namespace Scio.Revit.Ui
             else
             {
                 window.SizeToContent = SizeToContent.Height;
+                try { window.MaxHeight = Math.Max(460, SystemParameters.WorkArea.Height * 0.88); } catch { }
             }
             window.ResizeMode = resizable ? ResizeMode.CanResize : ResizeMode.NoResize;
             window.ShowInTaskbar = false;
@@ -644,10 +645,31 @@ namespace Scio.Revit.Ui
                 HorizontalAlignment = HorizontalAlignment.Left
             };
             btn.MouseEnter += (s, e) => { if (btn.IsEnabled) chrome.Background = hoverBg; };
-            btn.MouseLeave += (s, e) => chrome.Background = bg;
+            btn.MouseLeave += (s, e) => { chrome.Background = bg; chrome.BorderBrush = btn.IsKeyboardFocused ? Accent : border; };
+            btn.PreviewMouseLeftButtonDown += (s, e) => { if (btn.IsEnabled) chrome.Opacity = 0.85; };
+            btn.PreviewMouseLeftButtonUp += (s, e) => { if (btn.IsEnabled) chrome.Opacity = 1.0; };
+            btn.GotKeyboardFocus += (s, e) => { chrome.BorderBrush = Accent; chrome.BorderThickness = new Thickness(1.5); };
+            btn.LostKeyboardFocus += (s, e) => { chrome.BorderBrush = border; chrome.BorderThickness = new Thickness(1); };
             btn.IsEnabledChanged += (s, e) => chrome.Opacity = btn.IsEnabled ? 1.0 : 0.45;
             if (onClick != null) btn.Click += (s, e) => onClick();
             return btn;
+        }
+
+        /// <summary>Updates the visible text label of a ScioTheme.Button without destroying its styled Border chrome.</summary>
+        internal static void SetButtonLabel(Button btn, string label)
+        {
+            if (btn?.Content is Border chrome && chrome.Child is StackPanel panel)
+            {
+                foreach (var child in panel.Children)
+                {
+                    if (child is TextBlock tb && tb.FontFamily != Icons)
+                    {
+                        tb.Text = label ?? string.Empty;
+                        return;
+                    }
+                }
+            }
+            if (btn != null) btn.Content = label ?? string.Empty;
         }
 
         /// <summary>A rounded card. The accent stripe marks who is speaking (SCIO vs the person).</summary>

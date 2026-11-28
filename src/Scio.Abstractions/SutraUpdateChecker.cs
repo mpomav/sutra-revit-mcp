@@ -158,6 +158,11 @@ namespace Scio.Abstractions
                 var cached = JsonConvert.DeserializeObject<SutraUpdateInfo>(File.ReadAllText(path, Encoding.UTF8));
                 if (cached == null || string.IsNullOrWhiteSpace(cached.LatestVersion)) return null;
 
+                if (!IsTrustedReleaseUrl(cached.ReleaseUrl))
+                    cached.ReleaseUrl = DefaultReleasesPageUrl;
+                if (!IsTrustedReleaseUrl(cached.InstallerUrl))
+                    cached.InstallerUrl = cached.ReleaseUrl;
+
                 cached.CurrentVersion = NormalizeVersionString(currentVersion);
                 cached.UpdateAvailable = IsNewerVersion(cached.CurrentVersion, cached.LatestVersion);
                 return cached;
@@ -230,6 +235,8 @@ namespace Scio.Abstractions
                     return null;
 
                 string releaseUrl = obj.Value<string>("html_url") ?? DefaultReleasesPageUrl;
+                if (!IsTrustedReleaseUrl(releaseUrl))
+                    releaseUrl = DefaultReleasesPageUrl;
                 string installerUrl = releaseUrl;
 
                 if (obj["assets"] is JArray assets)
@@ -239,7 +246,8 @@ namespace Scio.Abstractions
                         string name = asset.Value<string>("name") ?? string.Empty;
                         string url = asset.Value<string>("browser_download_url") ?? string.Empty;
                         if (!string.IsNullOrWhiteSpace(url) &&
-                            name.EndsWith("-setup.exe", StringComparison.OrdinalIgnoreCase))
+                            name.EndsWith("-setup.exe", StringComparison.OrdinalIgnoreCase) &&
+                            IsTrustedReleaseUrl(url))
                         {
                             installerUrl = url;
                             break;
@@ -268,6 +276,29 @@ namespace Scio.Abstractions
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Security guard (SEC-04): ensures release/installer URLs point exclusively to the official
+        /// Sutra GitHub repository or GitHub release asset hosts over HTTPS before launching via ShellExecute.
+        /// </summary>
+        public static bool IsTrustedReleaseUrl(string? url)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return false;
+            if (!Uri.TryCreate(url!.Trim(), UriKind.Absolute, out var uri)) return false;
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
+
+            string host = uri.Host.ToLowerInvariant();
+            if (string.Equals(host, "github.com", StringComparison.Ordinal))
+            {
+                return uri.AbsolutePath.StartsWith("/mpomav/sutra-revit-mcp/", StringComparison.OrdinalIgnoreCase);
+            }
+            if (string.Equals(host, "objects.githubusercontent.com", StringComparison.Ordinal) ||
+                string.Equals(host, "release-assets.githubusercontent.com", StringComparison.Ordinal))
+            {
+                return true;
+            }
+            return false;
         }
 
         public static string NormalizeVersionString(string? raw)

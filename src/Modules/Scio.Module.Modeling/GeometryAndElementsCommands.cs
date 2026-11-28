@@ -76,7 +76,7 @@ namespace Scio.Module.Modeling
     [ScioTool("scio_create_elements", "modeling", "Create Revit elements (wall, floor, level, grid, family_instance, room) in mm coordinates with dry-run preview and post-commit verification.", ReadOnly = false)]
     public sealed class CreateElementsCommand : IRevitCommand
     {
-        [ScioParam("items", "Array of creation specs: { kind: 'wall'|'floor'|'level'|'grid'|'family_instance'|'room', ... }.", Required = true)]
+        [ScioParam("items", "Array of creation specs. Per-kind fields: wall { kind:'wall', start_mm:[x,y], end_mm:[x,y], level|level_id, type|type_id, height_mm?, offset_mm?, structural? }; floor { kind:'floor', boundary_mm:[[x,y],...], level|level_id, type|type_id? }; level { kind:'level', elevation_mm, name? }; grid { kind:'grid', start_mm:[x,y], end_mm:[x,y], name? }; family_instance { kind:'family_instance', location_mm:[x,y,z_rel_mm?], family?, type|type_id, level|level_id, host_id?, sill_height_mm?, offset_mm?, z_is_absolute?, structural_type? }; room { kind:'room', location_mm:[x,y], level|level_id, name?, number? }.", Required = true)]
         public JArray Items { get; set; } = new JArray();
 
         [ScioParam("dry_run", "If true (default), previews creation and rolls back.")]
@@ -190,7 +190,14 @@ namespace Scio.Module.Modeling
                 case "family_instance":
                 {
                     var lvl = ModelingGeometryKit.ResolveLevel(doc, spec.Value<string>("level"), spec.Value<long?>("level_id"));
-                    var pt = ModelingGeometryKit.ParsePointMm(spec["location_mm"]);
+                    var rawPt = ModelingGeometryKit.ParsePointMm(spec["location_mm"]);
+                    bool zIsAbsolute = spec.Value<bool?>("z_is_absolute") ?? false;
+                    double? sillMm = spec.Value<double?>("sill_height_mm") ?? spec.Value<double?>("offset_mm");
+                    double zFeet = sillMm.HasValue
+                        ? lvl.Elevation + UnitKit.MmToFeet(sillMm.Value)
+                        : (zIsAbsolute ? rawPt.Z : lvl.Elevation + rawPt.Z);
+                    var pt = new XYZ(rawPt.X, rawPt.Y, zFeet);
+
                     FamilySymbol sym = ResolveFamilySymbol(doc, spec.Value<string>("family"), spec.Value<string>("type"), spec.Value<long?>("type_id"))
                         ?? throw new InvalidOperationException("Matching FamilySymbol not found.");
                     if (!sym.IsActive) sym.Activate();
@@ -199,9 +206,18 @@ namespace Scio.Module.Modeling
                     var st = Enum.TryParse<StructuralType>(spec.Value<string>("structural_type") ?? "NonStructural", true, out var parsedSt)
                         ? parsedSt : StructuralType.NonStructural;
 
-                    if (host != null)
-                        return doc.Create.NewFamilyInstance(pt, sym, host, lvl, st);
-                    return doc.Create.NewFamilyInstance(pt, sym, lvl, st);
+                    FamilyInstance fi = host != null
+                        ? doc.Create.NewFamilyInstance(pt, sym, host, lvl, st)
+                        : doc.Create.NewFamilyInstance(pt, sym, lvl, st);
+
+                    if (sillMm.HasValue)
+                    {
+                        var sillParam = fi.get_Parameter(BuiltInParameter.INSTANCE_SILL_HEIGHT_PARAM)
+                            ?? fi.get_Parameter(BuiltInParameter.INSTANCE_ELEVATION_PARAM);
+                        if (sillParam != null && !sillParam.IsReadOnly)
+                            sillParam.Set(UnitKit.MmToFeet(sillMm.Value));
+                    }
+                    return fi;
                 }
                 case "room":
                 {

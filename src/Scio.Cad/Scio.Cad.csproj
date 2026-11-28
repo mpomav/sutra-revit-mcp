@@ -14,16 +14,23 @@
   <PropertyGroup>
     <CadYear Condition="'$(CadYear)' == ''">2025</CadYear>
     <CadDir Condition="'$(CadDir)' == ''">C:\Program Files\Autodesk\AutoCAD $(CadYear)</CadDir>
-    <_CadRuntimeConfigPath Condition="Exists('$(CadDir)\acdbmgd.runtimeconfig.json')">$(CadDir)\acdbmgd.runtimeconfig.json</_CadRuntimeConfigPath>
-    <_CadRuntimeConfigPath Condition="'$(_CadRuntimeConfigPath)' == '' and Exists('$(CadDir)\acad.runtimeconfig.json')">$(CadDir)\acad.runtimeconfig.json</_CadRuntimeConfigPath>
-    <_CadRuntimeConfigText Condition="$(CadYear) &gt;= 2025 and '$(_CadRuntimeConfigPath)' != ''">$([System.IO.File]::ReadAllText('$(_CadRuntimeConfigPath)'))</_CadRuntimeConfigText>
-    <CadUsesNet10 Condition="'$(CadUsesNet10)' == '' and $(CadYear) &gt;= 2027">true</CadUsesNet10>
-    <CadUsesNet10 Condition="'$(CadUsesNet10)' == '' and $(_CadRuntimeConfigText.Contains('net10.0'))">true</CadUsesNet10>
-    <CadUsesNet10 Condition="'$(CadUsesNet10)' == '' and $(_CadRuntimeConfigText.Contains('10.0'))">true</CadUsesNet10>
-    <CadUsesNet10 Condition="'$(CadUsesNet10)' == ''">false</CadUsesNet10>
+    <!--
+      AutoCAD / Civil 3D 2025.0-2025.1 and 2026.0 run on .NET 8 (net8.0-windows), while later updates
+      (e.g. AutoCAD 2025.1.x / 2026.1.x) migrated to .NET 10. A net8.0-windows add-in loads cleanly on
+      BOTH .NET 8 and .NET 10 AutoCAD hosts, whereas a net10.0-windows add-in fails silently on .NET 8
+      hosts. On machines with .NET 10 AutoCAD updates installed, local acdbmgd.dll references
+      System.Runtime 10.0.0.0 (CS1705 under net8.0-windows), so for net8.0-windows (and CI/missing
+      local installs) we compile against the official net8.0 AutoCAD.NET NuGet packages.
+    -->
     <TargetFramework Condition="$(CadYear) &lt;= 2024">net48</TargetFramework>
-    <TargetFramework Condition="$(CadYear) &gt;= 2025 and '$(CadUsesNet10)' != 'true'">net8.0-windows7.0</TargetFramework>
-    <TargetFramework Condition="$(CadYear) &gt;= 2025 and '$(CadUsesNet10)' == 'true'">net10.0-windows</TargetFramework>
+    <TargetFramework Condition="$(CadYear) == 2025 or $(CadYear) == 2026">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="$(CadYear) &gt;= 2027">net10.0-windows</TargetFramework>
+    <AutoCadNetVersion Condition="'$(CadYear)' == '2023'">24.2.0</AutoCadNetVersion>
+    <AutoCadNetVersion Condition="'$(CadYear)' == '2024'">24.3.0</AutoCadNetVersion>
+    <AutoCadNetVersion Condition="'$(CadYear)' == '2025'">25.0.0</AutoCadNetVersion>
+    <AutoCadNetVersion Condition="'$(CadYear)' == '2026'">25.1.0</AutoCadNetVersion>
+    <AutoCadNetVersion Condition="'$(AutoCadNetVersion)' == ''">26.0.0</AutoCadNetVersion>
+    <UseLocalCadApi Condition="'$(UseLocalCadApi)' == '' and '$(TargetFramework)' != 'net8.0-windows' and Exists('$(CadDir)\acdbmgd.dll') and Exists('$(CadDir)\accoremgd.dll') and Exists('$(CadDir)\acmgd.dll') and Exists('$(CadDir)\AdWindows.dll')">true</UseLocalCadApi>
     <UseWPF>true</UseWPF>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
@@ -50,7 +57,7 @@
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" Condition="'$(TargetFramework)' == 'net48'" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(UseLocalCadApi)' == 'true'">
     <Reference Include="accoremgd">
       <HintPath>$(CadDir)\accoremgd.dll</HintPath>
       <Private>false</Private>
@@ -67,6 +74,12 @@
       <HintPath>$(CadDir)\AdWindows.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLocalCadApi)' != 'true'">
+    <PackageReference Include="AutoCAD.NET" Version="$(AutoCadNetVersion)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Core" Version="$(AutoCadNetVersion)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="$(AutoCadNetVersion)" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <!-- Shared helpers live in Shared\ (auto-included by SDK-style glob) -->

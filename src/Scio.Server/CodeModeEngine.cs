@@ -1,6 +1,6 @@
 ﻿#nullable disable
 // -----------------------------------------------------------------------------
-// SCIO Revit MCP server â€” Local Code Mode Sandbox Engine.
+// SCIO Revit MCP server — Local Code Mode Sandbox Engine.
 //
 // Zero-dependency, pure-C# sandboxed JavaScript-subset evaluator designed for
 // MCP Code Mode orchestration (inspired by Cloudflare Code Mode, running 100%
@@ -616,7 +616,12 @@ namespace Scio.Server
 
         private sealed class BlockStmt : Stmt { public List<Stmt> Body; }
         private sealed class ExprStmt : Stmt { public Expr Expression; }
-        private sealed class VarDeclStmt : Stmt { public string Name; public Expr Init; }
+        private sealed class VarDeclStmt : Stmt
+        {
+            public string Name;
+            public Expr Init;
+            public List<(string Name, Expr Init)> Extra;
+        }
         private sealed class IfStmt : Stmt { public Expr Cond; public Stmt Then; public Stmt Else; }
         private sealed class WhileStmt : Stmt { public Expr Cond; public Stmt Body; }
         private sealed class ForStmt : Stmt { public Stmt Init; public Expr Cond; public Expr Post; public Stmt Body; }
@@ -762,8 +767,16 @@ namespace Scio.Server
                 Advance(); // let/const/var
                 string name = Expect(TokKind.Ident, "Expected variable name").Text;
                 Expr init = Match(TokKind.Eq) ? ParseExpr() : null;
+                List<(string Name, Expr Init)> extra = null;
+                while (Match(TokKind.Comma))
+                {
+                    string nextName = Expect(TokKind.Ident, "Expected variable name after ','").Text;
+                    Expr nextInit = Match(TokKind.Eq) ? ParseExpr() : null;
+                    extra ??= new List<(string, Expr)>();
+                    extra.Add((nextName, nextInit));
+                }
                 if (consumeSemi) Match(TokKind.Semi);
-                return new VarDeclStmt { Name = name, Init = init };
+                return new VarDeclStmt { Name = name, Init = init, Extra = extra };
             }
 
             private Stmt ParseFor()
@@ -1188,6 +1201,11 @@ namespace Scio.Server
 
                     case VarDeclStmt vd:
                         env.Define(vd.Name, vd.Init == null ? UndefinedValue.Instance : Eval(vd.Init, env));
+                        if (vd.Extra != null)
+                        {
+                            foreach (var pair in vd.Extra)
+                                env.Define(pair.Name, pair.Init == null ? UndefinedValue.Instance : Eval(pair.Init, env));
+                        }
                         return new Flow(FlowKind.Normal);
 
                     case FuncDeclStmt fd:

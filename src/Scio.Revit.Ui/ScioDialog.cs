@@ -128,7 +128,7 @@ namespace Scio.Revit.Ui
                 };
                 var expander = new Expander
                 {
-                    Header = ScioTheme.Text("Detalle tÃ©cnico", 11.5, ScioTheme.Muted, FontWeights.SemiBold),
+                    Header = ScioTheme.Text("Detalle técnico", 11.5, ScioTheme.Muted, FontWeights.SemiBold),
                     Content = detailBox,
                     Margin = new Thickness(0, 6, 0, 8),
                     Foreground = ScioTheme.Ink
@@ -168,7 +168,7 @@ namespace Scio.Revit.Ui
             var primaryBtn = ScioTheme.Button(
                 primaryLabel ?? "Confirmar",
                 glyph ?? ScioTheme.Glyph.Apply,
-                danger ? ScioTheme.ButtonKind.Primary : ScioTheme.ButtonKind.Primary,
+                danger ? ScioTheme.ButtonKind.Danger : ScioTheme.ButtonKind.Primary,
                 () =>
                 {
                     if (verifyCheck != null && verifyCheck.IsChecked != true) return;

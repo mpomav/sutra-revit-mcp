@@ -167,6 +167,9 @@ namespace Scio.Server
 
                     await _registry.HydrateRemoteCatalogAsync(ct, force: targetChanged).ConfigureAwait(false);
 
+                    var sanitizedRevit = SanitizeSessions(JArray.FromObject(revitSessions));
+                    var sanitizedCad = SanitizeSessions(JArray.FromObject(cadSessions));
+
                     var activeCad = _registry.ResolveCadTarget(out _);
                     var data = new JObject
                     {
@@ -176,8 +179,8 @@ namespace Scio.Server
                         ["pinned_cad_pid"] = _registry.PinnedCadPid,
                         ["preferred_year"] = _registry.PreferredRevitYear,
                         ["targets_found"] = revitSessions.Count + cadSessions.Count,
-                        ["sessions"] = JArray.FromObject(revitSessions),
-                        ["cad_sessions"] = JArray.FromObject(cadSessions)
+                        ["sessions"] = sanitizedRevit,
+                        ["cad_sessions"] = sanitizedCad
                     };
                     return ToolResponse.Success(req.RequestId, data, $"Found {revitSessions.Count} Revit and {cadSessions.Count} CAD session(s).");
                 });
@@ -456,16 +459,120 @@ namespace Scio.Server
             var reply = await _registry.DispatchAsync(req, ct).ConfigureAwait(false);
             var payload = JObject.FromObject(reply);
 
+            var content = new JArray(new JObject
+            {
+                ["type"] = "text",
+                ["text"] = payload.ToString(Formatting.Indented)
+            });
+
+            TryAppendInlineImageContent(content, toolName, args, reply);
+
             return MakeJsonRpcResult(id, new JObject
             {
-                ["content"] = new JArray(new JObject
-                {
-                    ["type"] = "text",
-                    ["text"] = payload.ToString(Formatting.Indented)
-                }),
+                ["content"] = content,
                 ["structuredContent"] = payload,
                 ["isError"] = !reply.Ok
             });
+        }
+
+        private static void TryAppendInlineImageContent(JArray content, string toolName, JObject args, ToolResponse reply)
+        {
+            if (!reply.Ok || reply.Data == null) return;
+
+            bool inlineRequested = args.Value<bool?>("inline_image")
+                ?? (args["arguments"] as JObject)?.Value<bool?>("inline_image")
+                ?? (reply.Data as JObject)?.Value<bool?>("inline_image")
+                ?? ((reply.Data as JObject)?["result"] as JObject)?.Value<bool?>("inline_image")
+                ?? false;
+            if (!inlineRequested) return;
+
+            string? imagePath = ExtractCapturedImagePath(toolName, args, reply.Data);
+            if (string.IsNullOrWhiteSpace(imagePath) || !IsAllowedInlineImagePath(imagePath!)) return;
+            if (!File.Exists(imagePath)) return;
+
+            try
+            {
+                var info = new FileInfo(imagePath);
+                const long MaxInlineImageBytes = 8 * 1024 * 1024;
+                if (info.Length <= 0 || info.Length > MaxInlineImageBytes) return;
+
+                string ext = Path.GetExtension(imagePath).ToLowerInvariant();
+                string mimeType = ext switch
+                {
+                    ".png" => "image/png",
+                    ".jpg" or ".jpeg" => "image/jpeg",
+                    ".webp" => "image/webp",
+                    _ => string.Empty
+                };
+                if (string.IsNullOrEmpty(mimeType)) return;
+
+                byte[] bytes = File.ReadAllBytes(imagePath);
+                content.Add(new JObject
+                {
+                    ["type"] = "image",
+                    ["data"] = Convert.ToBase64String(bytes),
+                    ["mimeType"] = mimeType
+                });
+            }
+            catch
+            {
+                // Inline image attachment is best-effort; never break tool response.
+            }
+        }
+
+        public static string? ExtractCapturedImagePath(string toolName, JObject args, JToken data)
+        {
+            string effectiveTool = string.Equals(toolName, "scio_call_tool", StringComparison.Ordinal)
+                ? (args.Value<string>("tool") ?? string.Empty)
+                : toolName;
+
+            if (string.Equals(effectiveTool, "scio_capture_view", StringComparison.Ordinal) && data is JObject directObj)
+                return directObj.Value<string>("image_path");
+
+            if (string.Equals(toolName, CodeModeTool.ToolName, StringComparison.Ordinal) && data is JObject cmObj)
+            {
+                // Security guard (SEC-01): only attach an inline image from Code Mode when
+                // scio_capture_view actually ran and succeeded in this execution trace.
+                bool capturedInTrace = cmObj["trace"] is JArray traceArr && traceArr.Any(t =>
+                    t is JObject step &&
+                    step.Value<bool?>("ok") == true &&
+                    string.Equals(step.Value<string>("tool"), "scio_capture_view", StringComparison.Ordinal));
+                if (!capturedInTrace) return null;
+
+                if (cmObj["result"] is JObject resObj)
+                    return resObj.Value<string>("image_path");
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Security guard (SEC-01): restricts inline image attachment to local paths inside
+        /// Sutra's data directory or OS temp directory (never UNC paths or arbitrary user files).
+        /// </summary>
+        public static bool IsAllowedInlineImagePath(string? imagePath)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath)) return false;
+            if (ScioRuntimePaths.ValidateLocalOutputPath(imagePath, "image_path") != null) return false;
+
+            string fullPath;
+            try { fullPath = Path.GetFullPath(imagePath!); }
+            catch { return false; }
+
+            string[] allowedRoots =
+            {
+                Path.GetFullPath(ScioRuntimePaths.DataRoot),
+                Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".scio")),
+                Path.GetFullPath(Path.GetTempPath())
+            };
+
+            foreach (string root in allowedRoots)
+            {
+                string normRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                if (fullPath.StartsWith(normRoot, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         private JObject BuildResourcesList()
@@ -506,6 +613,19 @@ namespace Scio.Server
                     ["text"] = JObject.FromObject(desc).ToString(Formatting.Indented)
                 })
             });
+        }
+
+        private static JArray SanitizeSessions(JArray sessions)
+        {
+            foreach (var item in sessions.OfType<JObject>())
+            {
+                bool hasAuth = !string.IsNullOrWhiteSpace(item.Value<string>("auth_token"))
+                    || !string.IsNullOrWhiteSpace(item.Value<string>("token"));
+                item.Remove("auth_token");
+                item.Remove("token");
+                item["auth"] = hasAuth;
+            }
+            return sessions;
         }
 
         private static JObject MakeJsonRpcResult(JToken id, JObject result) => new JObject

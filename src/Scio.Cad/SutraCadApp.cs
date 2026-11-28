@@ -41,6 +41,8 @@ namespace Scio.Cad
             dispatcher.Register("scio_health", args => CadHealthCommand.Execute(args, this));
             dispatcher.Register("cad_context", CadContextCommand.Execute);
             dispatcher.Register("cad_censo", CadCensoCommand.Execute);
+            dispatcher.Register("cad_texts", CadTextsCommand.Execute);
+            dispatcher.Register("cad_entities", CadEntitiesCommand.Execute);
             dispatcher.Register("c3d_inspect", Civil3DInspectCommand.Execute);
             dispatcher.Register("cad_write", CadWriteCommand.Execute);
             dispatcher.Register("c3d_write", Civil3DWriteCommand.Execute);

@@ -69,6 +69,11 @@ namespace Scio.Revit.CSharp
 
             if (!string.IsNullOrWhiteSpace(input.CodePath))
             {
+                string? pathProblem = ScioRuntimePaths.ValidateLocalOutputPath(input.CodePath, "code_path");
+                if (pathProblem != null)
+                    return ToolResponse.Refusal(request.RequestId, "invalid_code_path", pathProblem);
+                if (!input.CodePath!.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                    return ToolResponse.Refusal(request.RequestId, "invalid_code_path", "code_path must point to a local .cs script file.");
                 if (!File.Exists(input.CodePath))
                     return ToolResponse.Refusal(request.RequestId, "file_not_found", $"C# script file not found: {input.CodePath}");
                 rawCode = File.ReadAllText(input.CodePath, Encoding.UTF8);

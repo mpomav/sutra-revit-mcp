@@ -173,7 +173,10 @@ namespace Scio.Revit.Ui
             {
                 try
                 {
-                    Process.Start(new ProcessStartInfo(info.DownloadUrl) { UseShellExecute = true });
+                    string safeUrl = SutraUpdateChecker.IsTrustedReleaseUrl(info.DownloadUrl)
+                        ? info.DownloadUrl
+                        : SutraUpdateChecker.DefaultReleasesPageUrl;
+                    Process.Start(new ProcessStartInfo(safeUrl) { UseShellExecute = true });
                 }
                 catch { }
                 win.Close();

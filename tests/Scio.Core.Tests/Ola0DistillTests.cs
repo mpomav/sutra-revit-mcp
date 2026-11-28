@@ -235,7 +235,7 @@ namespace Scio.Core.Tests
 
                 var insights = DistillTool.Handle(new JObject { ["operation"] = "insights" }, CancellationToken.None, tmp);
                 Assert.Equal(3, insights.Value<int>("sessions_analyzed"));
-                Assert.True(((JArray)insights["distill_candidates"]!).Any(c => c.Value<bool>("ready_for_auto_distill")));
+                Assert.Contains((JArray)insights["distill_candidates"]!, c => c.Value<bool>("ready_for_auto_distill"));
             }
             finally
             {

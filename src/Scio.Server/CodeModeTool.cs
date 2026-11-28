@@ -105,8 +105,23 @@ namespace Scio.Server
             int maxOutputBytes = Clamp(args.Value<int?>("max_output_bytes") ?? DefaultMaxOutputBytes, 512, HardMaxOutputBytes);
 
             var trace = new JArray();
+            var partialResults = new JArray();
             int callCount = 0;
             var sw = Stopwatch.StartNew();
+
+            void RecordPartialResult(int step, string tool, bool ok, JToken data)
+            {
+                int b = data == null || data.Type == JTokenType.Null
+                    ? 0
+                    : Encoding.UTF8.GetByteCount(data.ToString(Formatting.None));
+                partialResults.Add(new JObject
+                {
+                    ["step"] = step,
+                    ["tool"] = tool,
+                    ["ok"] = ok,
+                    ["bytes"] = b
+                });
+            }
 
             object InvokeScioTool(string rawName, JObject callArgs)
             {
@@ -116,7 +131,7 @@ namespace Scio.Server
                 string toolName = ResolveToolName(registry, rawName);
                 if (toolName == ToolName)
                     throw new CodeModeException("tool_error", "Recursive call to '" + ToolName + "' is not allowed.");
-                if (toolName == "scio_execute_python" || toolName == "scio_execute_csharp")
+                if (toolName == "scio_execute_python" || toolName == "scio_execute_csharp" || toolName == "scio_promote_script")
                     throw new CodeModeException("tool_error", "'" + toolName + "' is blocked inside " + ToolName + ".");
                 if (toolName == "scio_call_tool")
                     throw new CodeModeException("tool_error", "'scio_call_tool' is blocked inside " + ToolName + "; call the target tool directly.");
@@ -157,7 +172,7 @@ namespace Scio.Server
                 }
 
                 var descriptor = registry.FindDescriptor(toolName);
-                if (readOnly && (descriptor == null || !descriptor.ReadOnly))
+                if (readOnly && (descriptor == null || (!descriptor.ReadOnly && !IsReadOnlyActionCall(toolName, callArgs))))
                 {
                     string reason = descriptor == null ? "missing_contract" : "read_only";
                     trace.Add(new JObject { ["step"] = callCount + 1, ["tool"] = toolName, ["ok"] = false, ["blocked"] = reason });
@@ -199,10 +214,12 @@ namespace Scio.Server
 
                 if (!reply.Ok)
                 {
+                    RecordPartialResult(callCount, toolName, false, reply.Data);
                     string errMsg = reply.Error?.Message ?? reply.Summary ?? "Unknown tool error.";
                     throw new CodeModeException("tool_error", $"Tool '{toolName}' failed: {errMsg}");
                 }
 
+                RecordPartialResult(callCount, toolName, true, reply.Data);
                 return CodeModeEngine.FromJToken(reply.Data ?? JValue.CreateNull());
             }
 
@@ -243,9 +260,25 @@ namespace Scio.Server
             scioObj["search"] = searchFn;
             scioObj["describe"] = describeFn;
 
+            var geoObj = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["pairParallel"] = (CodeModeEngine.HostCallable)(fnArgs =>
+                {
+                    if (fnArgs.Count < 3)
+                        throw new CodeModeException("tool_error", "geo.pairParallel(segs, minD, maxD, minOverlapRatio?) requires at least 3 arguments.");
+                    var segToken = CodeModeEngine.ToJToken(fnArgs[0]) as JArray;
+                    if (segToken == null) return new List<object>();
+                    double minD = Convert.ToDouble(fnArgs[1]);
+                    double maxD = Convert.ToDouble(fnArgs[2]);
+                    double minOverlapRatio = fnArgs.Count >= 4 && fnArgs[3] != null ? Convert.ToDouble(fnArgs[3]) : 0.5;
+                    return PairParallel2D(segToken, minD, maxD, minOverlapRatio);
+                })
+            };
+
             var globals = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["scio"] = scioObj,
+                ["geo"] = geoObj,
                 ["call"] = callFn,
                 ["search"] = searchFn,
                 ["describe"] = describeFn,
@@ -296,12 +329,57 @@ namespace Scio.Server
             catch (CodeModeException cme)
             {
                 sw.Stop();
-                throw new ToolRefusalException($"[{cme.Code}] {cme.Message}", new JObject
+                var errDetails = new JObject
                 {
                     ["error_code"] = cme.Code,
+                    ["failed_step"] = callCount,
                     ["trace"] = trace
-                });
+                };
+                if (partialResults.Count > 0)
+                    errDetails["partial_results"] = partialResults;
+                throw new ToolRefusalException($"[{cme.Code}] {cme.Message}", errDetails);
             }
+        }
+
+        private static readonly Dictionary<string, HashSet<string>> MixedToolReadOnlyActions =
+            new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["scio_manage_links"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list", "status", "inspect" },
+                ["scio_manage_images"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list", "inspect" },
+                ["scio_purge_unused"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list", "inspect" },
+                ["scio_document_session"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list", "status" },
+                ["scio_manage_tags"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "audit", "list" },
+                ["scio_manage_scope_boxes"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list" },
+                ["scio_revision_clouds"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list" },
+                ["scio_view_crop"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "read", "get", "inspect" },
+                ["scio_toposolid_ops"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "inspect" },
+                ["scio_family_apply"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "inspect", "list" },
+                ["scio_manage_curtain"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "inspect" },
+                ["scio_slab_shape"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "inspect" },
+                ["scio_manage_assemblies_parts"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list" },
+                ["scio_manage_groups"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list" },
+                ["scio_manage_worksets"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list" },
+                ["scio_manage_phases"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list" },
+                ["scio_manage_revisions"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list" },
+                ["scio_manage_materials"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list", "inspect" },
+                ["scio_manage_styles"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list" },
+                ["scio_manage_units"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "inspect", "list" },
+                ["scio_manage_system_types"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list", "inspect" },
+                ["scio_rebar_cover"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list" },
+                ["scio_cad_point_cloud"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "inspect" },
+                ["scio_cad_draft"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list_blocks" },
+                ["scio_cad_criteria"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "list_packs", "query", "get_assembly", "validate_values", "get_export_prompt" },
+                ["scio_selection_exchange"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "read", "get" }
+            };
+
+        internal static bool IsReadOnlyActionCall(string toolName, JObject callArgs)
+        {
+            if (string.IsNullOrWhiteSpace(toolName) || !MixedToolReadOnlyActions.TryGetValue(toolName, out var allowed))
+                return false;
+            string action = (callArgs?.Value<string>("action") ?? callArgs?.Value<string>("operation") ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(action))
+                return false;
+            return allowed.Contains(action);
         }
 
         private static string ResolveToolName(ServerToolRegistry registry, string raw)
@@ -316,6 +394,88 @@ namespace Scio.Server
                 if (registry.FindDescriptor(prefixed) != null) return prefixed;
             }
             return trimmed;
+        }
+
+        private static object PairParallel2D(JArray segs, double minD, double maxD, double minOverlapRatio)
+        {
+            var pts = new List<(double X0, double Y0, double X1, double Y1, double Dx, double Dy, double Len)>();
+            foreach (var item in segs)
+            {
+                double x0, y0, x1, y1;
+                if (item is JArray a && a.Count >= 4)
+                {
+                    x0 = a[0].Value<double>(); y0 = a[1].Value<double>();
+                    x1 = a[2].Value<double>(); y1 = a[3].Value<double>();
+                }
+                else if (item is JObject o && o["start_mm"] is JArray s && o["end_mm"] is JArray e && s.Count >= 2 && e.Count >= 2)
+                {
+                    x0 = s[0].Value<double>(); y0 = s[1].Value<double>();
+                    x1 = e[0].Value<double>(); y1 = e[1].Value<double>();
+                }
+                else continue;
+
+                double dx = x1 - x0, dy = y1 - y0;
+                double len = Math.Sqrt(dx * dx + dy * dy);
+                if (len < 1e-3) continue;
+                pts.Add((x0, y0, x1, y1, dx / len, dy / len, len));
+            }
+
+            double cosTol = Math.Cos(2.0 * Math.PI / 180.0);
+            var cands = new List<(int I, int J, double Dist, double Ov, double Cx0, double Cy0, double Cx1, double Cy1)>();
+            int n = pts.Count;
+            for (int i = 0; i < n; i++)
+            {
+                var a = pts[i];
+                double nx = -a.Dy, ny = a.Dx;
+                double sA0 = a.X0 * a.Dx + a.Y0 * a.Dy;
+                double sA1 = a.X1 * a.Dx + a.Y1 * a.Dy;
+                if (sA0 > sA1) { double t = sA0; sA0 = sA1; sA1 = t; }
+                double tA = a.X0 * nx + a.Y0 * ny;
+
+                for (int j = i + 1; j < n; j++)
+                {
+                    var b = pts[j];
+                    if (Math.Abs(a.Dx * b.Dx + a.Dy * b.Dy) < cosTol) continue;
+                    double tB = 0.5 * ((b.X0 * nx + b.Y0 * ny) + (b.X1 * nx + b.Y1 * ny));
+                    double dist = Math.Abs(tB - tA);
+                    if (dist < minD || dist > maxD) continue;
+
+                    double sB0 = b.X0 * a.Dx + b.Y0 * a.Dy;
+                    double sB1 = b.X1 * a.Dx + b.Y1 * a.Dy;
+                    if (sB0 > sB1) { double t = sB0; sB0 = sB1; sB1 = t; }
+
+                    double ov0 = Math.Max(sA0, sB0);
+                    double ov1 = Math.Min(sA1, sB1);
+                    double ov = ov1 - ov0;
+                    if (ov <= dist || ov < minOverlapRatio * Math.Min(a.Len, b.Len)) continue;
+
+                    double tMid = 0.5 * (tA + tB);
+                    cands.Add((i, j, dist, ov, a.Dx * ov0 + nx * tMid, a.Dy * ov0 + ny * tMid, a.Dx * ov1 + nx * tMid, a.Dy * ov1 + ny * tMid));
+                }
+            }
+
+            cands.Sort((u, v) =>
+            {
+                int cmp = u.Dist.CompareTo(v.Dist);
+                return cmp != 0 ? cmp : v.Ov.CompareTo(u.Ov);
+            });
+
+            var used = new bool[n];
+            var outArr = new JArray();
+            foreach (var c in cands)
+            {
+                if (used[c.I] || used[c.J]) continue;
+                used[c.I] = true;
+                used[c.J] = true;
+                outArr.Add(new JObject
+                {
+                    ["start_mm"] = new JArray(Math.Round(c.Cx0, 1), Math.Round(c.Cy0, 1)),
+                    ["end_mm"] = new JArray(Math.Round(c.Cx1, 1), Math.Round(c.Cy1, 1)),
+                    ["thickness_mm"] = Math.Round(c.Dist, 1),
+                    ["length_mm"] = Math.Round(c.Ov, 1)
+                });
+            }
+            return CodeModeEngine.FromJToken(outArr);
         }
 
         private static int Clamp(int v, int min, int max) => v < min ? min : (v > max ? max : v);

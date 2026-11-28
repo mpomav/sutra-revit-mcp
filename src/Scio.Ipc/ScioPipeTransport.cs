@@ -11,9 +11,12 @@ namespace Scio.Ipc
     /// </summary>
     public sealed class ScioPipeServer : IDisposable
     {
+        public const int MaxConcurrentClients = 32;
+
         private readonly string _pipeName;
         private readonly Func<ToolRequest, CancellationToken, Task<ToolResponse>> _handler;
         private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+        private readonly SemaphoreSlim _clientSlots = new SemaphoreSlim(MaxConcurrentClients, MaxConcurrentClients);
         private Task? _listenTask;
 
         public ScioPipeServer(string pipeName, Func<ToolRequest, CancellationToken, Task<ToolResponse>> handler)
@@ -41,7 +44,17 @@ namespace Scio.Ipc
                     var accepted = server;
                     server = null;
 
-                    _ = Task.Run(() => HandleClientAsync(accepted, ct), ct);
+                    if (!_clientSlots.Wait(0))
+                    {
+                        accepted.Dispose();
+                        continue;
+                    }
+
+                    _ = Task.Run(async () =>
+                    {
+                        try { await HandleClientAsync(accepted, ct).ConfigureAwait(false); }
+                        finally { _clientSlots.Release(); }
+                    }, ct);
                 }
                 catch (OperationCanceledException)
                 {
@@ -100,6 +113,7 @@ namespace Scio.Ipc
             _cts.Cancel();
             try { _listenTask?.Wait(500); } catch { }
             _cts.Dispose();
+            _clientSlots.Dispose();
         }
     }
 

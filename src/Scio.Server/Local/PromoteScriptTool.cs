@@ -28,7 +28,8 @@ namespace Scio.Server
         public static JObject Handle(JObject args, CancellationToken ct, string? storePathOverride = null)
         {
             string op = (args?.Value<string>("operation") ?? "list").Trim().ToLowerInvariant();
-            string storePath = string.IsNullOrWhiteSpace(storePathOverride) ? DefaultStorePath() : storePathOverride!;
+            bool isTestOverride = !string.IsNullOrWhiteSpace(storePathOverride);
+            string storePath = isTestOverride ? storePathOverride! : DefaultStorePath();
 
             switch (op)
             {
@@ -36,17 +37,46 @@ namespace Scio.Server
                 case "show": return HandleShow(args, storePath);
                 case "propose": return HandlePropose(args, storePath);
                 case "review": return HandleTransition(args, storePath, "review", "proposed", "reviewed");
-                case "approve": return HandleTransition(args, storePath, "approve", "reviewed", "approved");
-                case "activate": return HandleActivate(args, storePath);
+                case "approve":
+                    RequireOwnerPromotionAuthorization(isTestOverride, "approve");
+                    return HandleTransition(args, storePath, "approve", "reviewed", "approved");
+                case "activate":
+                    RequireOwnerPromotionAuthorization(isTestOverride, "activate");
+                    return HandleActivate(args, storePath);
                 case "deactivate": return HandleDeactivate(args, storePath);
                 case "source": return HandleSource(args, storePath);
                 case "resolve": return HandleResolve(args, storePath);
                 case "invocation": return HandleInvocation(args, storePath);
-                case "export_pyrevit": return HandleExportPyRevit(args, storePath);
+                case "export_pyrevit": return HandleExportPyRevit(args, storePath, isTestOverride);
                 default:
                     throw new ToolRefusalException(
                         $"Unsupported operation '{op}'. Expected: list, show, propose, review, approve, activate, deactivate, source, resolve, invocation, export_pyrevit.");
             }
+        }
+
+        /// <summary>
+        /// Security guard (SEC-02): prevents an LLM from self-approving and activating scripts
+        /// without explicit machine-owner authorization in %USERPROFILE%\.scio\v4\settings.json.
+        /// </summary>
+        private static void RequireOwnerPromotionAuthorization(bool isTestOverride, string operation)
+        {
+            if (isTestOverride) return;
+            try
+            {
+                string settingsPath = Path.Combine(ScioRuntimePaths.DataRoot, "settings.json");
+                if (File.Exists(settingsPath))
+                {
+                    var obj = JObject.Parse(File.ReadAllText(settingsPath, Encoding.UTF8));
+                    if (obj["allow_script_promotion"]?.Type == JTokenType.Boolean && (bool)obj["allow_script_promotion"]!)
+                        return;
+                }
+            }
+            catch { }
+
+            throw new ToolRefusalException(
+                $"Refused '{operation}': script promotion approval/activation requires owner authorization " +
+                "(\"allow_script_promotion\": true in %USERPROFILE%\\.scio\\v4\\settings.json). " +
+                "Clients may propose and review scripts, but cannot self-approve.");
         }
 
         private static JObject HandleList(JObject? args, string storePath)
@@ -230,8 +260,10 @@ namespace Scio.Server
             }
         }
 
-        private static JObject HandleExportPyRevit(JObject? args, string storePath)
+        private static JObject HandleExportPyRevit(JObject? args, string storePath, bool isTestOverride)
         {
+            RequireOwnerPromotionAuthorization(isTestOverride, "export_pyrevit");
+
             var items = LoadItems(storePath);
             var target = RequireGeneration(items, args);
             string status = target.Value<string>("status") ?? string.Empty;
@@ -247,17 +279,43 @@ namespace Scio.Server
             if (string.IsNullOrWhiteSpace(extensionRoot))
                 throw new ToolRefusalException("'extension_root' (path to local *.extension directory) is required for export_pyrevit.");
 
+            string? pathProblem = ScioRuntimePaths.ValidateLocalOutputPath(extensionRoot, "extension_root");
+            if (pathProblem != null)
+                throw new ToolRefusalException(pathProblem);
+
+            string canonicalRoot = Path.GetFullPath(extensionRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!canonicalRoot.EndsWith(".extension", StringComparison.OrdinalIgnoreCase))
+                throw new ToolRefusalException("'extension_root' must point to a local *.extension directory.");
+
             string tabName = SanitizeSlug(args?.Value<string>("tab_name") ?? "SCIO-Local");
             string panelName = SanitizeSlug(args?.Value<string>("panel_name") ?? "Distilled");
             string flowSlug = SanitizeSlug(target.Value<string>("name") ?? "Flow");
-            string buttonDir = Path.Combine(extensionRoot, tabName + ".tab", panelName + ".panel", flowSlug + ".pushbutton");
-            Directory.CreateDirectory(buttonDir);
+            string buttonDir = Path.GetFullPath(Path.Combine(canonicalRoot, tabName + ".tab", panelName + ".panel", flowSlug + ".pushbutton"));
+            if (!buttonDir.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new ToolRefusalException("Resolved pyRevit button directory escapes extension_root.");
 
             string scriptPath = Path.Combine(buttonDir, "script.py");
             string bundlePath = Path.Combine(buttonDir, "bundle.yaml");
             string source = target.Value<string>("source") ?? string.Empty;
             string minPerm = target.Value<string>("min_permission_profile") ?? "SafeWrite";
             string dllVersion = target.Value<string>("sutra_dll_version") ?? "1.0.0";
+
+            if (args?.Value<bool?>("dry_run") == true)
+            {
+                return new JObject
+                {
+                    ["operation"] = "export_pyrevit",
+                    ["dry_run"] = true,
+                    ["generation_id"] = target["id"],
+                    ["button_dir"] = buttonDir,
+                    ["script_path"] = scriptPath,
+                    ["bundle_path"] = bundlePath,
+                    ["min_permission_profile"] = minPerm,
+                    ["sutra_dll_version"] = dllVersion
+                };
+            }
+
+            Directory.CreateDirectory(buttonDir);
 
             File.WriteAllText(scriptPath, source, new UTF8Encoding(false));
             string bundleYaml =

@@ -48,7 +48,7 @@ namespace Scio.Revit.Ui
         {
             var sb = new StringBuilder();
             sb.AppendLine(es
-                ? "Con el MCP de SCIO (" + ServerName + "), ejecuta " + e.Tool + " (" + e.Title(true) + ") con estos argumentos y explÃ­came el resultado:"
+                ? "Con el MCP de SCIO (" + ServerName + "), ejecuta " + e.Tool + " (" + e.Title(true) + ") con estos argumentos y explícame el resultado:"
                 : "With the SCIO MCP (" + ServerName + "), run " + e.Tool + " (" + e.Title(false) + ") with these arguments and explain the result:");
             sb.AppendLine(args?.ToString(Newtonsoft.Json.Formatting.None) ?? "{}");
             AppendContext(sb, ctx, es);
@@ -68,7 +68,7 @@ namespace Scio.Revit.Ui
                 sb.AppendLine((es ? "Elementos implicados: " : "Elements involved: ") + string.Join(", ", ids.Take(200)));
             if (!string.IsNullOrEmpty(file)) sb.AppendLine((es ? "Reporte: " : "Report: ") + file);
             sb.AppendLine(es
-                ? "AyÃºdame a decidir el siguiente paso usando el MCP de SCIO (" + ServerName + ")."
+                ? "Ayúdame a decidir el siguiente paso usando el MCP de SCIO (" + ServerName + ")."
                 : "Help me decide the next step using the SCIO MCP (" + ServerName + ").");
             AppendContext(sb, ctx, es);
             AppendRules(sb, es);
@@ -108,13 +108,13 @@ namespace Scio.Revit.Ui
         {
             if (ctx == null) return;
             sb.AppendLine();
-            sb.AppendLine(es ? "Contexto de Revit (leÃ­do por el panel SCIO):" : "Revit context (read by the SCIO pane):");
+            sb.AppendLine(es ? "Contexto de Revit (leído por el panel SCIO):" : "Revit context (read by the SCIO pane):");
             sb.AppendLine("- " + (es ? "Documento activo: " : "Active document: ") + (ctx.HasDocument ? ctx.DocumentTitle : (es ? "ninguno" : "none")));
             if (!string.IsNullOrEmpty(ctx.ActiveViewName)) sb.AppendLine("- " + (es ? "Vista activa: " : "Active view: ") + ctx.ActiveViewName);
             if (ctx.HasSelection)
             {
                 string cats = string.Join(", ", ctx.Categories.OrderByDescending(kv => kv.Value).Select(kv => kv.Key + " (" + kv.Value + ")"));
-                sb.AppendLine("- " + (es ? "SelecciÃ³n: " : "Selection: ") + ctx.SelectedIds.Count + (cats.Length > 0 ? " â€” " + cats : ""));
+                sb.AppendLine("- " + (es ? "Selección: " : "Selection: ") + ctx.SelectedIds.Count + (cats.Length > 0 ? " — " + cats : ""));
                 sb.AppendLine("- element_ids: [" + string.Join(", ", ctx.SelectedIds.Take(200)) + (ctx.SelectedIds.Count > 200 ? ", ..." : "") + "]");
             }
         }
@@ -123,7 +123,7 @@ namespace Scio.Revit.Ui
         {
             sb.AppendLine();
             sb.AppendLine(es
-                ? "Llama primero a scio_health. Ensaya toda escritura (dry_run) y pÃ­deme confirmaciÃ³n antes de aplicarla."
+                ? "Llama primero a scio_health. Ensaya toda escritura (dry_run) y pídeme confirmación antes de aplicarla."
                 : "Call scio_health first. Rehearse every write (dry_run) and ask me before applying it.");
         }
     }

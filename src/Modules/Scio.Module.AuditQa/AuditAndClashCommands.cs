@@ -204,6 +204,9 @@ namespace Scio.Module.AuditQa
         [ScioParam("category", "Optional category filter; omit to compute across all model categories.")]
         public string CategoryName { get; set; } = string.Empty;
 
+        [ScioParam("level", "Optional level name filter (case-insensitive) to scope takeoff to a single level.")]
+        public string LevelName { get; set; } = string.Empty;
+
         [ScioParam("save_json_path", "Optional absolute path to persist the takeoff JSON.")]
         public string SaveJsonPath { get; set; } = string.Empty;
 
@@ -213,6 +216,7 @@ namespace Scio.Module.AuditQa
         {
             var doc = context.RequireActiveDocument(request.TargetDocument);
             string? catArg = request.Arguments.Value<string>("category");
+            string? levelArg = request.Arguments.Value<string>("level");
             var col = new FilteredElementCollector(doc).WhereElementIsNotElementType();
             if (!string.IsNullOrWhiteSpace(catArg))
             {
@@ -231,6 +235,8 @@ namespace Scio.Module.AuditQa
                 string fam = et?.FamilyName ?? string.Empty;
                 string typ = et?.Name ?? el.Name ?? string.Empty;
                 string lvl = (el.LevelId != ElementId.InvalidElementId && doc.GetElement(el.LevelId) is Level l) ? l.Name : "(Unassigned)";
+                if (!string.IsNullOrWhiteSpace(levelArg) && !string.Equals(lvl, levelArg.Trim(), StringComparison.OrdinalIgnoreCase))
+                    continue;
 
                 double vol = ReadDouble(el, BuiltInParameter.HOST_VOLUME_COMPUTED, UnitKit.CuFeetToCuM);
                 double area = ReadDouble(el, BuiltInParameter.HOST_AREA_COMPUTED, UnitKit.SqFeetToSqM);

@@ -254,14 +254,14 @@ namespace Scio.Server
                 }
 
                 string? endpoint = ResolveEndpoint(null);
-                if (string.IsNullOrWhiteSpace(endpoint) || !endpoint!.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                if (!IsAllowedTelemetryEndpoint(endpoint, out _))
                 {
-                    _lastAutoFlushStatus = "no_https_endpoint";
+                    _lastAutoFlushStatus = "blocked_endpoint";
                     return new JObject
                     {
                         ["operation"] = "auto_flush",
                         ["sent"] = false,
-                        ["status"] = "no_https_endpoint",
+                        ["status"] = "blocked_endpoint",
                         ["events_flushed"] = 0
                     };
                 }
@@ -433,8 +433,8 @@ namespace Scio.Server
 
             if (!string.IsNullOrWhiteSpace(endpoint))
             {
-                if (!endpoint!.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                    throw new ToolRefusalException("Telemetry endpoint must use HTTPS.");
+                if (!IsAllowedTelemetryEndpoint(endpoint, out string endpointError))
+                    throw new ToolRefusalException(endpointError);
 
                 (bool ok, int code) = PostPayload(endpoint!, payload.ToString(Formatting.None), ct);
                 if (!ok)
@@ -543,11 +543,56 @@ namespace Scio.Server
 
         private static string? ResolveEndpoint(string? explicitArg)
         {
-            string? chosen = !string.IsNullOrWhiteSpace(explicitArg)
-                ? explicitArg!.Trim()
-                : (ConfiguredEndpoint() ?? DefaultEndpoint);
+            if (!string.IsNullOrWhiteSpace(explicitArg))
+            {
+                string trimmed = explicitArg!.Trim();
+                if (string.Equals(trimmed, "local", StringComparison.OrdinalIgnoreCase)) return null;
+                if (!IsAllowedTelemetryEndpoint(trimmed, out string reason))
+                    throw new ToolRefusalException(reason);
+                return trimmed;
+            }
+            string? chosen = ConfiguredEndpoint() ?? DefaultEndpoint;
             if (string.Equals(chosen, "local", StringComparison.OrdinalIgnoreCase)) return null;
             return string.IsNullOrWhiteSpace(chosen) ? null : chosen;
+        }
+
+        /// <summary>
+        /// Security guard (SEC-03): prevents SSRF / arbitrary exfiltration by restricting telemetry
+        /// endpoints to HTTPS on scio.pe (or subdomains) and rejecting IP literals and loopback hosts.
+        /// </summary>
+        public static bool IsAllowedTelemetryEndpoint(string? url, out string reason)
+        {
+            reason = string.Empty;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                reason = "Telemetry endpoint is empty.";
+                return false;
+            }
+            if (!Uri.TryCreate(url!.Trim(), UriKind.Absolute, out Uri? uri))
+            {
+                reason = "Telemetry endpoint must be a valid absolute HTTPS URL.";
+                return false;
+            }
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
+                reason = "Telemetry endpoint must use HTTPS.";
+                return false;
+            }
+            if (uri.IsLoopback ||
+                string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+                System.Net.IPAddress.TryParse(uri.Host, out _))
+            {
+                reason = "Telemetry endpoint cannot target localhost or raw IP addresses.";
+                return false;
+            }
+            string host = uri.Host.ToLowerInvariant();
+            if (!string.Equals(host, "scio.pe", StringComparison.Ordinal) &&
+                !host.EndsWith(".scio.pe", StringComparison.Ordinal))
+            {
+                reason = $"Telemetry endpoint host '{uri.Host}' is not in the allowed Sutra telemetry domain list (scio.pe). Pass endpoint='local' for local export.";
+                return false;
+            }
+            return true;
         }
 
         private static string ReadRegionCode()

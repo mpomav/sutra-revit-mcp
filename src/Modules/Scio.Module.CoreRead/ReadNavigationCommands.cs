@@ -619,7 +619,7 @@ namespace Scio.Module.CoreRead
         }
     }
 
-    [ScioTool("scio_capture_view", "core", "Export a PNG image of the active view or a named/ID view for visual inspection.", ReadOnly = true)]
+    [ScioTool("scio_capture_view", "core", "Export a PNG image of the active view or a named/ID view and return it inline to the AI chat for visual QA and reading DWG/sheet text.", ReadOnly = true)]
     public sealed class CaptureViewCommand : IRevitCommand
     {
         [ScioParam("view_id", "Optional View ElementId to capture (defaults to active view).")]
@@ -630,6 +630,9 @@ namespace Scio.Module.CoreRead
 
         [ScioParam("pixel_size", "Image width/height in pixels (default 1600, range 400..4096).")]
         public int PixelSize { get; set; } = 1600;
+
+        [ScioParam("inline_image", "Optional: when true, also returns the captured PNG inline to the AI chat as an MCP image content block for visual QA (default false to save tokens).")]
+        public bool InlineImage { get; set; } = false;
 
         public ToolDescriptor Descriptor { get; } = JsonSchemaBuilder.DescribeTool(typeof(CaptureViewCommand));
 
@@ -676,12 +679,14 @@ namespace Scio.Module.CoreRead
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault();
 
+            bool inlineImage = request.Arguments.Value<bool?>("inline_image") ?? false;
             return ToolResponse.Success(request.RequestId, new JObject
             {
                 ["view_id"] = IdCompat.ToInt64(view.Id),
                 ["view_name"] = view.Name,
                 ["image_path"] = written ?? outPath,
-                ["pixel_size"] = pixels
+                ["pixel_size"] = pixels,
+                ["inline_image"] = inlineImage
             }, $"Captured view '{view.Name}' to '{written ?? outPath}'.");
         }
     }

@@ -90,13 +90,10 @@ try {
     $CadProj = Join-Path $RepoRoot "src\Scio.Cad\Scio.Cad.csproj"
     if (Test-Path $CadProj) {
         foreach ($cyr in $CadYears) {
+            $cadTfm = if ($cyr -le 2024) { "net48" } elseif ($cyr -le 2026) { "net8.0-windows" } else { "net10.0-windows" }
             $cadDir = "C:\Program Files\Autodesk\AutoCAD $cyr"
-            $cadDll = Join-Path $cadDir "acdbmgd.dll"
-            if (-not (Test-Path $cadDll)) {
-                Write-Host "  Skipping AutoCAD / Civil 3D $cyr (not installed)." -ForegroundColor Yellow
-                continue
-            }
-            Write-Host "=== Building & staging AutoCAD / Civil 3D $cyr (Scio.Cad) ===" -ForegroundColor Cyan
+            $cadSource = if ($cadTfm -eq "net8.0-windows") { "AutoCAD.NET net8 universal" } elseif (Test-Path (Join-Path $cadDir "acdbmgd.dll")) { "local acdbmgd.dll" } else { "AutoCAD.NET NuGet" }
+            Write-Host "=== Building & staging AutoCAD / Civil 3D $cyr (Scio.Cad · $cadTfm · $cadSource) ===" -ForegroundColor Cyan
             dotnet build $CadProj -c $Configuration -p:CadYear=$cyr "-p:CadDir=$cadDir" --disable-build-servers --nologo -v quiet
             if ($LASTEXITCODE -ne 0) { throw "Scio.Cad build failed for AutoCAD / Civil 3D $cyr." }
 

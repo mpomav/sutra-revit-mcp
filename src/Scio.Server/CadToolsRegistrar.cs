@@ -51,6 +51,60 @@ namespace Scio.Server
 
             registry.RegisterRemoteTool(new ToolDescriptor
             {
+                Name = "scio_cad_texts",
+                RemoteCommand = "cad_texts",
+                TargetHost = "cad",
+                Pack = "cad",
+                ReadOnly = true,
+                Description = "Read DBText, format-stripped MText, and BlockReference attribute texts from AutoCAD/Civil 3D with coordinates normalized to mm (matching linked DWGs in Revit). Defaults to compact [x_mm, y_mm, height_mm, text, layer] rows to minimize tokens.",
+                InputSchema = JObject.Parse(@"{
+  ""type"": ""object"",
+  ""properties"": {
+    ""space"": { ""type"": ""string"", ""enum"": [""model"", ""paper"", ""all""], ""default"": ""model"" },
+    ""layer_filter"": { ""type"": ""string"" },
+    ""text_filter"": { ""type"": ""string"" },
+    ""include_mtext"": { ""type"": ""boolean"", ""default"": true },
+    ""include_attributes"": { ""type"": ""boolean"", ""default"": true },
+    ""compact"": { ""type"": ""boolean"", ""default"": true },
+    ""bbox_mm"": { ""type"": ""array"", ""items"": { ""type"": ""number"" }, ""minItems"": 4, ""maxItems"": 4 },
+    ""bbox"": { ""type"": ""array"", ""items"": { ""type"": ""number"" }, ""minItems"": 4, ""maxItems"": 4 },
+    ""limit"": { ""type"": ""integer"", ""minimum"": 1, ""maximum"": 5000, ""default"": 500 }
+  },
+  ""additionalProperties"": false
+}")
+            });
+
+            registry.RegisterRemoteTool(new ToolDescriptor
+            {
+                Name = "scio_cad_entities",
+                RemoteCommand = "cad_entities",
+                TargetHost = "cad",
+                Pack = "cad",
+                ReadOnly = true,
+                Description = "Compact high-density AutoCAD/Civil 3D reader for TEXT, MTEXT, INSERT (with dynamic block effective name & attributes), and HATCH (outer boundary polygon <= 100mm chord). Coordinates normalized to integer mm in WCS, with nested block traversal, spatial deduplication, bbox_mm filter, and offset/max_items pagination.",
+                InputSchema = JObject.Parse(@"{
+  ""type"": ""object"",
+  ""required"": [""types""],
+  ""properties"": {
+    ""types"": { ""type"": ""array"", ""minItems"": 1, ""items"": { ""type"": ""string"", ""enum"": [""TEXT"", ""MTEXT"", ""INSERT"", ""HATCH""] } },
+    ""layers"": { ""type"": ""array"", ""items"": { ""type"": ""string"" } },
+    ""layer_match"": { ""type"": ""string"", ""enum"": [""exact"", ""contains""], ""default"": ""exact"" },
+    ""bbox_mm"": { ""type"": ""array"", ""items"": { ""type"": ""number"" }, ""minItems"": 4, ""maxItems"": 4 },
+    ""space"": { ""type"": ""string"", ""enum"": [""model"", ""paper"", ""all""], ""default"": ""model"" },
+    ""explode_nested"": { ""type"": ""boolean"", ""default"": true },
+    ""include_attributes"": { ""type"": ""boolean"", ""default"": true },
+    ""include_hatch_boundary"": { ""type"": ""boolean"", ""default"": true },
+    ""text_contains"": { ""type"": [""string"", ""null""] },
+    ""dedupe_tolerance_mm"": { ""type"": ""number"", ""minimum"": 0, ""default"": 5 },
+    ""max_items"": { ""type"": ""integer"", ""minimum"": 1, ""maximum"": 5000, ""default"": 2000 },
+    ""offset"": { ""type"": ""integer"", ""minimum"": 0, ""default"": 0 }
+  },
+  ""additionalProperties"": false
+}")
+            });
+
+            registry.RegisterRemoteTool(new ToolDescriptor
+            {
                 Name = "scio_c3d_inspect",
                 RemoteCommand = "c3d_inspect",
                 TargetHost = "cad",

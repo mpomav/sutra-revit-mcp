@@ -33,31 +33,34 @@ function Write-AtomicUtf8 {
     Move-Item -LiteralPath $tmp -Destination $Path -Force
 }
 
-function ConvertTo-OrderedHashtable {
-    param($InputObject)
-    if ($null -eq $InputObject) { return [ordered]@{} }
-    if ($InputObject -is [System.Collections.IDictionary]) {
-        $ht = [ordered]@{}
-        foreach ($k in $InputObject.Keys) {
-            $ht[$k] = ConvertTo-OrderedHashtable $InputObject[$k]
-        }
-        return $ht
+function Set-JsonProperty {
+    param(
+        [Parameter(Mandatory = $true)]$Object,
+        [Parameter(Mandatory = $true)][string]$Name,
+        $Value
+    )
+    if ($Object -is [System.Collections.IDictionary]) {
+        $Object[$Name] = $Value
+        return
     }
-    if ($InputObject -is [PSCustomObject]) {
-        $ht = [ordered]@{}
-        foreach ($p in $InputObject.PSObject.Properties) {
-            $ht[$p.Name] = ConvertTo-OrderedHashtable $p.Value
-        }
-        return $ht
+    $prop = $Object.PSObject.Properties[$Name]
+    if ($null -ne $prop) {
+        $prop.Value = $Value
+    } else {
+        $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value -Force
     }
-    if ($InputObject -is [System.Collections.IEnumerable] -and -not ($InputObject -is [string])) {
-        $arr = @()
-        foreach ($item in $InputObject) {
-            $arr += ,(ConvertTo-OrderedHashtable $item)
-        }
-        return $arr
+}
+
+function Get-JsonProperty {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    if ($Object -is [System.Collections.IDictionary]) {
+        if ($Object.Contains($Name)) { return $Object[$Name] }
+        return $null
     }
-    return $InputObject
+    $prop = $Object.PSObject.Properties[$Name]
+    if ($null -ne $prop) { return $prop.Value }
+    return $null
 }
 
 function Update-JsonMcpConfig {
@@ -66,28 +69,31 @@ function Update-JsonMcpConfig {
         [string]$RootKey = "mcpServers",
         [bool]$IncludeTypeStdio = $false
     )
-    $root = [ordered]@{}
+    $root = New-Object PSObject
     if (Test-Path -LiteralPath $ConfigPath) {
         $raw = [System.IO.File]::ReadAllText($ConfigPath, [System.Text.Encoding]::UTF8)
         if (-not [string]::IsNullOrWhiteSpace($raw)) {
-            $parsed = $raw | ConvertFrom-Json
-            $root = ConvertTo-OrderedHashtable $parsed
+            # Keep the parsed PSCustomObject graph untouched so 0- and 1-element arrays
+            # in unrelated sections (e.g. Claude Desktop's preferences.*) are never unrolled.
+            $root = $raw | ConvertFrom-Json
         }
     }
 
-    if (-not $root.Contains($RootKey) -or -not ($root[$RootKey] -is [System.Collections.IDictionary])) {
-        $root[$RootKey] = [ordered]@{}
+    $servers = Get-JsonProperty -Object $root -Name $RootKey
+    if ($null -eq $servers -or ($servers -is [string]) -or ($servers -is [System.Array])) {
+        $servers = New-Object PSObject
+        Set-JsonProperty -Object $root -Name $RootKey -Value $servers
     }
-    $servers = $root[$RootKey]
 
     # Preserve any custom env vars the user already had on scio-revit
     $existingEnv = [ordered]@{}
-    if ($servers.Contains("scio-revit") -and ($servers["scio-revit"] -is [System.Collections.IDictionary])) {
-        $oldEntry = $servers["scio-revit"]
-        if ($oldEntry.Contains("env") -and ($oldEntry["env"] -is [System.Collections.IDictionary])) {
-            foreach ($k in $oldEntry["env"].Keys) {
-                $existingEnv[$k] = $oldEntry["env"][$k]
-            }
+    $oldEntry = Get-JsonProperty -Object $servers -Name "scio-revit"
+    $oldEnv = Get-JsonProperty -Object $oldEntry -Name "env"
+    if ($null -ne $oldEnv) {
+        if ($oldEnv -is [System.Collections.IDictionary]) {
+            foreach ($k in $oldEnv.Keys) { $existingEnv[$k] = $oldEnv[$k] }
+        } else {
+            foreach ($p in $oldEnv.PSObject.Properties) { $existingEnv[$p.Name] = $p.Value }
         }
     }
     if (-not $existingEnv.Contains("SCIO_SCHEMA_MODE")) {
@@ -102,8 +108,8 @@ function Update-JsonMcpConfig {
     $entry["args"] = @()
     $entry["env"] = $existingEnv
 
-    $servers["scio-revit"] = $entry
-    $json = $root | ConvertTo-Json -Depth 16
+    Set-JsonProperty -Object $servers -Name "scio-revit" -Value $entry
+    $json = $root | ConvertTo-Json -Depth 32
     Write-AtomicUtf8 -Path $ConfigPath -Content ($json + "`n")
 }
 

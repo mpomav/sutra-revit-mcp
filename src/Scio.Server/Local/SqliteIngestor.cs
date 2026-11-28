@@ -40,6 +40,8 @@ namespace Scio.Server
         private static readonly HashSet<string> IngestibleTools = new HashSet<string>(StringComparer.Ordinal)
         {
             "scio_censo",
+            "scio_cad_censo",
+            "scio_c3d_export",
             "scio_metrado_partidas",
             "scio_auditoria_parametros",
             "scio_naming_check",
@@ -96,6 +98,15 @@ namespace Scio.Server
 
         [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_errmsg", CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr sqlite3_errmsg(IntPtr db);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int SqliteProgressCallback(IntPtr userData);
+
+        [DllImport("winsqlite3.dll", EntryPoint = "sqlite3_progress_handler", CallingConvention = CallingConvention.Cdecl)]
+        private static extern void sqlite3_progress_handler(IntPtr db, int nOps, SqliteProgressCallback callback, IntPtr userData);
+
+        private const int SQLITE_INTERRUPT = 9;
+        private const int DefaultReadQueryTimeoutMs = 5000;
 
         public static string GetDatabasePath()
         {
@@ -593,8 +604,11 @@ namespace Scio.Server
                     return new JObject { ["ok"] = false, ["error"] = "Failed to open scio_local.db read-only." };
 
                 IntPtr stmt = IntPtr.Zero;
+                var queryDeadlineUtc = DateTime.UtcNow.AddMilliseconds(DefaultReadQueryTimeoutMs);
+                SqliteProgressCallback progressCb = _ => DateTime.UtcNow > queryDeadlineUtc ? 1 : 0;
                 try
                 {
+                    sqlite3_progress_handler(db, 10000, progressCb, IntPtr.Zero);
                     byte[] sqlBytes = Encoding.UTF8.GetBytes(sql.Trim().TrimEnd(';') + "\0");
                     int prepRc = sqlite3_prepare_v2(db, sqlBytes, sqlBytes.Length - 1, out stmt, out _);
                     if (prepRc != SQLITE_OK || stmt == IntPtr.Zero)
@@ -614,6 +628,10 @@ namespace Scio.Server
                     {
                         int stepRc = sqlite3_step(stmt);
                         if (stepRc == SQLITE_DONE) break;
+                        if (stepRc == SQLITE_INTERRUPT)
+                        {
+                            return new JObject { ["ok"] = false, ["error"] = $"SQL query aborted: exceeded {DefaultReadQueryTimeoutMs} ms timeout." };
+                        }
                         if (stepRc != SQLITE_ROW)
                         {
                             string msg = ReadUtf8(sqlite3_errmsg(db)) ?? ("SQLite step error " + stepRc);
@@ -660,6 +678,8 @@ namespace Scio.Server
                 }
                 finally
                 {
+                    sqlite3_progress_handler(db, 0, null, IntPtr.Zero);
+                    GC.KeepAlive(progressCb);
                     if (stmt != IntPtr.Zero) sqlite3_finalize(stmt);
                     sqlite3_close_v2(db);
                 }
@@ -670,6 +690,8 @@ namespace Scio.Server
         {
             if (string.IsNullOrWhiteSpace(sql))
                 return "sql is required.";
+            if (sql.IndexOf('\0') >= 0)
+                return "Null bytes are forbidden in SQL queries.";
 
             string trimmed = sql.Trim();
             if (trimmed.EndsWith(";", StringComparison.Ordinal))
@@ -839,7 +861,7 @@ namespace Scio.Server
         private static string Escape(string value)
         {
             if (value == null) return string.Empty;
-            return value.Replace("'", "''");
+            return value.Replace("\0", string.Empty).Replace("'", "''");
         }
 
         public static List<List<string>> ReadCsvLines(string filePath)
